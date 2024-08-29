@@ -14,6 +14,9 @@
 #define PENDING_CONNECTION_BACKLOG 10000
 #define EPOLL_CACHE_SIZE 10000
 
+int server_fd = -1;
+int epoll_fd = -1;
+
 using namespace std;
 namespace arpa_inet
 {
@@ -50,28 +53,28 @@ namespace sys_epoll
         1. we'll accept the new connection and add the new client socket to the epoll instance.
         2. close socket and remove fd from the epoll instance
     If it's an event on a client socket, we'll read the data from the client.
+
+    struct epoll_event {
+        uint32_t events;  // Epoll events, this is bitwise, to combine more than 1 event type we use OR operator
+                        // e.g. EPOLLIN | EPOLLOUT
+                        // USE & operator to check for a specific event,, we will use if (events[i].events & EPOLLIN)
+        epoll_data_t data;  // User data variable
+    }
+    typedef union epoll_data {
+        void *ptr;
+        int fd;
+        uint32_t u32;
+        uint64_t u64;
+    } epoll_data_t;
+
+    so we will store the fd inside &epoll_event->data->fd
     */
     using ::epoll_create1;
     using ::epoll_ctl;
     using ::epoll_wait;
+
 }
 
-/*
-struct epoll_event {
-    uint32_t events;  // Epoll events, this is bitwise, to combine more than 1 event type we use OR operator
-                      // e.g. EPOLLIN | EPOLLOUT
-                      // USE & operator to check for a specific event,, we will use if (events[i].events & EPOLLIN)
-    epoll_data_t data;  // User data variable
-}
-typedef union epoll_data {
-    void *ptr;
-    int fd;
-    uint32_t u32;
-    uint64_t u64;
-} epoll_data_t;
-
-so we will store the fd inside &epoll_event->data->fd
-*/
 void print_success(const char *message)
 {
     cout << "Success : " << message << "\n"
@@ -228,7 +231,12 @@ bool handle_client_data(int *client_fd)
             buffer[bytes_received] = '\0'; // Null-terminate the received data
             cout << "Received " << bytes_received << " bytes: " << buffer << endl;
 
-            break;
+            return true;
+        }
+        else if (bytes_received == 0)
+        {
+            // non blocking ports :)
+            return true;
         }
         else if (bytes_received < 0)
         {
@@ -236,7 +244,6 @@ bool handle_client_data(int *client_fd)
             return false;
         }
     }
-    return true;
 }
 bool handle_epoll_by_event(int *epoll_fd, int *server_fd)
 {
@@ -279,9 +286,6 @@ bool handle_epoll_by_event(int *epoll_fd, int *server_fd)
 
 int main()
 {
-
-    int server_fd = -1;
-    int epoll_fd = -1;
 
     // 1. Create FD for server and Epoll + 2. Set up binding + listenx
     if (setup_server_and_epoll_fd(&server_fd, &epoll_fd) == false)

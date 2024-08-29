@@ -1,30 +1,20 @@
 import socket
+import time
 import sys
 
-# Create a raw socket
-try:
-    s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
-except socket.error as msg:
-    print(f"Socket creation error: {msg}")
-    sys.exit()
-
-# Destination IP and port
-dest_ip = '127.0.0.1'  # localhost
-dest_port = 8888
-
-# Data to send
-data = b"Hello, this is a test message!"
-
-# Construct the packet
-packet = data
-
-# Send the packet
-try:
-    s.sendto(packet, (dest_ip, dest_port))
-    print(f"Packet sent successfully to {dest_ip}:{dest_port}")
-except socket.error as msg:
-    print(f"Failed to send packet: {msg}")
-    sys.exit()
-
-# Close the socket
-s.close()
+def send_messages(host, port, retries=5):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((host, port))
+            for _ in range(retries):
+            
+                msg1 = "meow1"                        
+                s.sendall(msg1.encode())
+                print(f"Sent: {msg1}")
+                time.sleep(1)            
+    except socket.error as e:
+        print(e)
+# Usage
+if __name__ == "__main__":
+    send_messages('127.0.0.1', 8888)
+    
