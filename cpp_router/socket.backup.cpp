@@ -102,6 +102,11 @@ bool add_socket_to_epoll(int *epoll_fd, int *socket_fd, uint32_t events)
     }
     return true;
 }
+bool remove_socket_from_epoll(int *epoll_fd, int *socket_fd)
+{
+    return epoll_ctl(*epoll_fd, EPOLL_CTL_DEL, *socket_fd, nullptr) != -1;
+}
+
 bool bind_and_listen_server_fd(int *server_fd)
 {
     cout << "   Binding socket to server IP and port\n   Initializing server_address" << endl;
@@ -112,8 +117,7 @@ bool bind_and_listen_server_fd(int *server_fd)
     server_address.sin_addr.s_addr = arpa_inet::inet_addr("127.0.0.1");
     server_address.sin_port = htons(SERVER_PORT); // host byte order to network byte order, not sure why this isnt implicit. also its BYTE. from arpa
 
-    int bind_server_output = sys_socket::bind(*server_fd,
-                                              (struct sockaddr *)&server_address, sizeof(server_address));
+    int bind_server_output = sys_socket::bind(*server_fd, (struct sockaddr *)&server_address, sizeof(server_address));
     if (bind_server_output < 0)
     {
         cerr << "Terminating ... failed to bind socket\n    " << strerror(errno) << std::endl;
@@ -235,8 +239,8 @@ bool handle_client_data(int *client_fd)
         }
         else if (bytes_received == 0)
         {
-            // non blocking ports :)
-            return true;
+            cout << "Received 0 bytes: Removing port" << buffer << endl;            
+            return false;
         }
         else if (bytes_received < 0)
         {
@@ -245,7 +249,7 @@ bool handle_client_data(int *client_fd)
         }
     }
 }
-bool handle_epoll_by_event(int *epoll_fd, int *server_fd)
+bool handle_epoll(int *epoll_fd, int *server_fd)
 {
     struct epoll_event events[EPOLL_CACHE_SIZE];
     // no. file descriptors =  int epoll_wait(int epoll_fd, struct epoll_event *events, int maxevents, int timeout);
@@ -257,6 +261,11 @@ bool handle_epoll_by_event(int *epoll_fd, int *server_fd)
         return false;
     }
 
+    /**
+     * @brief When the client closes the connection normally (sending a FIN packet), it will be caught in handle_client_data when recv() returns 0.
+    When the client terminates abruptly (like with Ctrl+C), it will be caught in handle_epoll with EPOLLHUP or EPOLLERR events.
+     *
+     */
     // Iterate through the epoll
     for (int i = 0; i < nfds; i++)
     {
@@ -267,18 +276,25 @@ bool handle_epoll_by_event(int *epoll_fd, int *server_fd)
             {
                 std::cerr << "  Failed to accept connection: " << strerror(errno) << std::endl;
             }
-            break;
+            
         }
 
         else // client_fd receives new data
         {
-            int client_fd = events[i].data.fd;
-            if (handle_client_data(&client_fd) == false)
+            int *client_fd = &(events[i].data.fd);
+            if (handle_client_data(client_fd) == false)
             {
-                cerr << "   Failed to handle data " << endl;
+                if (!remove_socket_from_epoll(epoll_fd, client_fd))
+                {
+                    cerr << "failed to remove socket" << endl;
+                    return false;
+                }
+
+                sys_socket::close(*client_fd);
+                cout << "Closed socket " << *client_fd << endl;
             }
 
-            break;
+            
         }
     }
     return true;
@@ -294,8 +310,8 @@ int main()
     // 3. Accept and handle incoming connections
     while (true)
     {
-        if (handle_epoll_by_event(&epoll_fd, &server_fd) == false)
-            cerr << "   Failed to handle events in EPOLL" << strerror(errno) << endl;
+        if (handle_epoll(&epoll_fd, &server_fd) == false)
+            cerr << "   Failed to handle events in EPOLL - errno : " << strerror(errno) << endl;
     }
 
     return 0;
