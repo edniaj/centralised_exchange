@@ -213,8 +213,9 @@ bool handle_new_client_connection(int *epoll_fd, int *server_fd)
         }
         else
         {
-            return false; // Return an error code to indicate failure
+            return false; // Return false to indicate failure
         }
+        
     }
 
     return true;
@@ -282,8 +283,10 @@ bool handle_epoll(int *epoll_fd, int *server_fd)
         else // client_fd receives new data
         {
             int *client_fd = &(events[i].data.fd);
+            
             if (handle_client_data(client_fd) == false)
             {
+                // Should also manage Client hung up
                 if (!remove_socket_from_epoll(epoll_fd, client_fd))
                 {
                     cerr << "failed to remove socket" << endl;
