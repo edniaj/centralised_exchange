@@ -28,12 +28,14 @@ shows running container
 
 ## docker rm <container id or container name>
 
-## docker run -it --name cex_container -v /Users/jd/Desktop centralised_exchange:/usr/src/app cex_image bash
+## docker run -it --name cex_container -p 6379:6379 -v /Users/jd/Desktop/centralised_exchange:/usr/src/app cex_image bash
 
 
 Starts the container
 
 ## docker exec -it cex_container bash
 
-
 Attaches terminal to an existing container 
+
+## redis-server --protected-mode no
+So that we can use redis insight to view container redis cache
