@@ -1,0 +1,4 @@
+'''
+Redis command to delete
+
+'''

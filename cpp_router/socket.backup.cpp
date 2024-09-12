@@ -75,10 +75,13 @@ namespace sys_epoll
 
 }
 
+namespace fix_protocol {
+
+}
+
 void print_success(const char *message)
 {
-    cout << "Success : " << message << "\n"
-         << endl;
+    cout << "Success : " << message << "\n"<< endl;
 }
 bool add_socket_to_epoll(int *epoll_fd, int *socket_fd, uint32_t events)
 {

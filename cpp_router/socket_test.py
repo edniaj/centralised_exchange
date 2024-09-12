@@ -26,9 +26,7 @@ def send_messages(host, port, retries=5):
                     "59=0\x01"  # TimeInForce (0 = Day)
                     "10=128\x01"  # CheckSum
                 )        
-                fix_message = (
-                    "x\x01"
-                )
+                
                 
                 s.sendall(fix_message.encode())
                 print(f"Sent: {fix_message}")
