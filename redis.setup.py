@@ -24,3 +24,45 @@
 
 '''
 
+import redis
+import time
+
+# Connect to Redis
+r = redis.StrictRedis(host='localhost', port=6379, db=0)
+
+# Sample data
+symbol = "AAPL"
+side_buy = "buy"
+side_sell = "s11ell"
+price = 150.00
+order_id = "1234456337"
+user_id = "user133234"
+quantity = 10
+timestamp = int(time.time() * 1000)  # Current time in milliseconds
+status = "open"
+
+# Start a Redis transaction
+with r.pipeline() as pipe:
+    # 1. Orders at Price Level (Sorted Set)
+    pipe.zadd(f"{symbol}:{side_buy}:{price}", {order_id: timestamp})
+
+    # 2. Order Details (Hash)
+    pipe.hset(f"{symbol}:orders:{order_id}", mapping={
+        "order_id": order_id,
+        "user_id": user_id,
+        "side": side_buy,
+        "price": price,
+        "quantity": quantity,
+        "timestamp": timestamp,
+        "status": status
+    })
+
+    # 3. Aggregated Price Level Info (Hash)
+    pipe.hincrby(f"{symbol}:{side_buy}:{price}:info", "total_quantity", quantity)
+    pipe.hincrby(f"{symbol}:{side_buy}:{price}:info", "order_count", 1)
+
+    # 4. User Orders Index (Set)
+    pipe.sadd(f"{symbol}:user:{user_id}:orders", order_id)
+
+    # Execute all commands atomically
+    pipe.execute()

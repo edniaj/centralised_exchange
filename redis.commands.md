@@ -1,10 +1,10 @@
 ## Common short-forms used in commands
-H - Hash
-S - Set
-Z - Sorted Set
+    H - Hash
+    S - Set
+    Z - Sorted Set
 
-REV - Reverse
-0 -1 - First index item to the last index item
+    REV - Reverse
+    0 -1 - First index item to the last index item
 
 ## Destroying Redis Cache
 FLUSHDB SYNC  
