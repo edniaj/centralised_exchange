@@ -7,7 +7,8 @@ docker exec -it cpp_router /bin/bash
 ~~python sends a sample fix~~
 ~~gracefully exit server and client~~
 ~~ redis database - figure out how to set up ~~
-Set up (mock data) and Delete all redis data in the database - python file
+~~Set up (mock data) and Delete all redis data in the database - python file~~
+~~Create a frontend to view the orderbook~~
 create a fix disassembler to interpret the data
 Create routes to add data into redis orderbook
 set up database
