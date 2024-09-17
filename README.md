@@ -9,10 +9,13 @@ docker exec -it cpp_router /bin/bash
 ~~ redis database - figure out how to set up ~~
 ~~Set up (mock data) and Delete all redis data in the database - python file~~
 ~~Create a frontend to view the orderbook~~
-create a fix disassembler to interpret the data
-Create routes to add data into redis orderbook
-set up database
-create fix route 
+Fix disassembler to interpret the data - routes should be inside the disassembler
+Set up database + mock user account
+User authentication ->  Tag user to a FD in the router (work on authentication later)
+
+Create routes to CRUD order into redis orderbook
+Refactor the code
+Create liquidation engine (?) 
 
 implement edge-triggered over level-triggered
 ## Design decisions
