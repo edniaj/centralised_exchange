@@ -39,3 +39,10 @@ Attaches terminal to an existing container
 
 ## redis-server --protected-mode no
 So that we can use redis insight to view container redis cache
+
+# All that we need
+
+1. docker rm cex_container
+2. docker build -t cex_image .
+3. docker run -it --name cex_container -p 6379:6379 -p 5432:5432 -v /Users/jd/Desktop/centralised_exchange:/usr/src/app cex_image bash
+4. docker exec -it cex_container bash
