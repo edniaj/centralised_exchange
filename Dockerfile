@@ -28,7 +28,9 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y \
 RUN apt-get install -y software-properties-common && \
     add-apt-repository ppa:redislabs/redis && \
     apt-get update && \
-    apt-get install -y redis-server
+    apt-get install -y redis-server && \ 
+    apt-get install libpqxx-dev
+
 
 # Set the working directory inside the container
 WORKDIR /usr/src/app

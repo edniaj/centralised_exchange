@@ -84,7 +84,7 @@ def create_order(user_id, order_id, side, price, quantity, timestamp):
             # Execute all commands atomically (EXEC)
             pipe.execute()
 
-      print(f"Order:{order_id}\n     {side}:{quantity}:{price:.2f}   for user {user_id} at price  submitted successfully.")
+      # print(f"Order:{order_id}\n     {side}:{quantity}:{price:.2f}   for user {user_id} at price  submitted successfully.")
 
    except Exception as e:
       print(f"Failed to submit order {order_id} for user {user_id}: {e}")
@@ -123,3 +123,4 @@ def generate_orders():
 
 if __name__ == "__main__":
    generate_orders()
+   print("Orders generated successfully")

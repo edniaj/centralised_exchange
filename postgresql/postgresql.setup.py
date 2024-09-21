@@ -14,7 +14,10 @@ conn = psycopg2.connect(
 # Create a cursor
 cur = conn.cursor()
 
-# Create the users table
+'''Create the users table
+We dont need a separate column to store the salt since its appended to the hash (bcrypt)
+
+'''
 cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -22,7 +25,7 @@ cur.execute("""
         password VARCHAR(100) NOT NULL,
         created_at TIMESTAMP NOT NULL
     )
-""") #password is hashed
+""") 
 
 # Generate a salt and hash the password
 salt = bcrypt.gensalt()
