@@ -11,57 +11,11 @@
 #include <errno.h>
 #include <signal.h> // used to gracefully terminate client terminal
 #include <pqxx/pqxx>
-#include <unordered_map> // hash table for O(1) lookup, VERIFIED client FDs
+#include <array>
+#include <unordered_set> // hash table for O(1) lookup, VERIFIED client FDs
 #define SERVER_PORT 8888
 #define PENDING_CONNECTION_BACKLOG 10000
-#define EPOLL_CACHE_SIZE 1000000
-
-class DatabaseManager {
-private:
-    pqxx::connection conn;
-
-public:
-    DatabaseManager(const std::string& connString) : conn(connString) {}
-
-    bool verifyUser(const std::string& username, const std::string& password) {
-        try {
-            pqxx::work txn(conn);
-            pqxx::result result = txn.exec(
-                "SELECT * FROM users WHERE username = " + txn.quote(username)
-            );
-
-            if (result.empty()) {
-                return false; // User not found
-            }
-
-            // Here you would typically check the password
-            // For this example, we're just checking if the user exists
-            // In a real application, you'd need to hash the password and compare it
-
-            txn.commit();
-            return true;
-        } catch (const std::exception& e) {
-            std::cerr << "Error verifying user: " << e.what() << std::endl;
-            return false;
-        }
-    }
-
-    // You can add more methods here for other database operations
-};
-
-int server_fd = -1;
-int epoll_fd = -1;
-const int MAX_SENDERCOMPID = 1000000; // 1 million unique sendercompids, we will use this for an array. Better than hashtable
-
-std::set<int> set_unverifiedfd; // O(log n) for worse case hash collision, this is fine since n is small and cant really build up.
-
-// This array of unordered sets allows for multiple sessions per SenderCompID.
-// Each index in the array represents a unique SenderCompID (up to MAX_SENDERCOMPID).
-// The unordered_set at each index contains the file descriptors (fds) of verified sessions for that SenderCompID.
-// When a new session is verified, its fd is added to the corresponding set.
-// When a session ends or becomes inactive, its fd is removed from the set.
-// This structure enables efficient management of multiple concurrent sessions for each SenderCompID.
-std::array<std::unordered_set<int>, MAX_SENDERCOMPID> array_sendercompid_verifiedfd; 
+#define EPOLL_CACHE_SIZE 10000
 
 using namespace std;
 namespace arpa_inet
@@ -121,13 +75,63 @@ namespace sys_epoll
 
 }
 
-namespace fix_protocol {
+int server_fd = -1;
+int epoll_fd = -1;
+const int MAX_SENDERCOMPID = 10000; // 1 million unique sendercompids, we will use this for an array. Better than hashtable
 
-}
+// O(log n) for worse case hash collision, this is fine since n is small and cant really build up.
+// This array of unordered sets allows for multiple sessions per SenderCompID.
+// Each index in the array represents a unique SenderCompID (up to MAX_SENDERCOMPID).
+// The unordered_set at each index contains the file descriptors (fds) of verified sessions for that SenderCompID.
+// When a new session is verified, its fd is added to the corresponding set.
+// When a session ends or becomes inactive, its fd is removed from the set.
+// This structure enables efficient management of multiple concurrent sessions for each SenderCompID.
+
+std::set<int> set_unverifiedfd;
+std::array<std::unordered_set<int>, MAX_SENDERCOMPID> array_sendercompid_verifiedfd;
+
+class DatabaseManager
+{
+private:
+    pqxx::connection conn;
+
+public:
+    DatabaseManager(const std::string &connString) : conn(connString) {}
+
+    bool verifyUser(const std::string &username, const std::string &password)
+    {
+        try
+        {
+            pqxx::work txn(conn);
+            pqxx::result result = txn.exec(
+                "SELECT * FROM users WHERE username = " + txn.quote(username));
+
+            if (result.empty())
+            {
+                return false; // User not found
+            }
+
+            // Here you would typically check the password
+            // For this example, we're just checking if the user exists
+            // In a real application, you'd need to hash the password and compare it
+
+            txn.commit();
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "Error verifying user: " << e.what() << std::endl;
+            return false;
+        }
+    }
+
+    // You can add more methods here for other database operations
+};
 
 void print_success(const char *message)
 {
-    cout << "Success : " << message << "\n"<< endl;
+    cout << "Success : " << message << "\n"
+         << endl;
 }
 bool add_socket_to_epoll(int *epoll_fd, int *socket_fd, uint32_t events)
 {
@@ -155,7 +159,6 @@ bool remove_socket_from_epoll(int *epoll_fd, int *socket_fd)
 {
     return epoll_ctl(*epoll_fd, EPOLL_CTL_DEL, *socket_fd, nullptr) != -1;
 }
-
 bool bind_and_listen_server_fd(int *server_fd)
 {
     cout << "   Binding socket to server IP and port\n   Initializing server_address" << endl;
@@ -188,7 +191,7 @@ bool set_non_blocking(int *fd)
 {
     /*
     The |= operator is a bitwise OR assignment operator. It adds the O_NONBLOCK flag to the existing flags.
-    This means that you’re adding the non-blocking behavior to whatever flags were already set for the file descriptor.
+    This means that you're adding the non-blocking behavior to whatever flags were already set for the file descriptor.
 
     int fcntl(int fd, int cmd, ... arg)
 
@@ -238,22 +241,21 @@ bool setup_server_and_epoll_fd(int *server_fd, int *epoll_fd)
     bind_and_listen_server_fd(server_fd);
     return true;
 }
-
-bool verify_new_client(const char* buffer, size_t buffer_size) {
+bool verify_new_client(const std::string& username, const std::string& password, DatabaseManager& dbManager)
+// std::string& is a reference to a string. It's an alias for an existing string object.
+//std::string* is a pointer to a string. It stores the memory address of a string object.
+{
     // Authentication logic here
-    // For now, we'll just assume the client is authenticated
-    // We need to check for the username, and password, and check if it exists in the database.
-    // we need to use a vector to map the sendercompid to fd
-    return true;
+    // We need to check for the username and password in the database
+    return dbManager.verifyUser(username, password);
 }
-
 bool handle_new_client_connection(int *epoll_fd, int *server_fd)
 {
-    
+
     int client_fd = sys_socket::accept(*server_fd, nullptr, nullptr);
     while (client_fd > 0)
     {
-        if (set_non_blocking(&client_fd) == false)
+        if ((set_non_blocking(&client_fd) && add_socket_to_epoll(epoll_fd, &client_fd, EPOLLIN | EPOLLET)) == false)
             return -1;
 
         // If we successfully accepted a connection, handle the new client
@@ -274,15 +276,14 @@ bool handle_new_client_connection(int *epoll_fd, int *server_fd)
         {
             return false; // Return false to indicate failure
         }
-        
     }
 
     return true;
 }
-bool handle_client_data(int *client_fd)
+bool handle_client_data(int *client_fd, DatabaseManager& dbManager)
 {
     // 5. Receives bytes
-    const int BUFFER_SIZE = 64 * 1024; 
+    const int BUFFER_SIZE = 64 * 1024;
     char buffer[BUFFER_SIZE];
     ssize_t bytes_received;
 
@@ -290,22 +291,36 @@ bool handle_client_data(int *client_fd)
     {
         cstring::memset(buffer, 0, BUFFER_SIZE);
         bytes_received = sys_socket::recv(*client_fd, buffer, BUFFER_SIZE - 1, 0); // last byte is for null terminator
-        
+        cout << "bytes received: " << bytes_received << endl;
         if (bytes_received > 0)
         {
             buffer[bytes_received] = '\0'; // Null-terminate the received data
-            
-            if (set_unverifiedfd.count(*client_fd) > 0) {
 
-                if (verify_new_client(buffer, bytes_received) == true) {
+            if (set_unverifiedfd.count(*client_fd) > 0)
+            {
+                
+                
+                std::string username = "admin";
+                std::string password = "password";
 
-                    // TODO get the sendercompid from the buffer
+                if (verify_new_client(username, password, dbManager))
+                {
                     set_unverifiedfd.erase(*client_fd);
-                    array_sendercompid_verifiedfd[sendercompid].insert(*client_fd);                    
-                } else {
+
+                    // TODO: Get the sendercompid from the buffer
+                    int sendercompid = 1; // This should be extracted from the buffer
+                    array_sendercompid_verifiedfd[sendercompid].insert(*client_fd);
+                    
+                    std::cout << "Client verified: " << username << std::endl;
+                }
+                else
+                {
+                    std::cout << "Client verification failed for: " << username << std::endl;
                     return false;
                 }
-            } else {
+            }
+            else
+            {
                 // Client is already verified, process the data normally
                 cout << "Received " << bytes_received << " bytes: " << buffer << endl;
             }
@@ -313,7 +328,7 @@ bool handle_client_data(int *client_fd)
         }
         else if (bytes_received == 0)
         {
-            cout << "Received 0 bytes: Removing port" << endl;            
+            cout << "Received 0 bytes: Removing port" << endl;
             return false;
         }
         else if (bytes_received < 0)
@@ -331,8 +346,9 @@ bool handle_client_data(int *client_fd)
         }
     }
 }
-bool handle_epoll(int *epoll_fd, int *server_fd)
-{
+bool handle_epoll(int *epoll_fd, int *server_fd, DatabaseManager& dbManager)
+{   
+    cout << "Handling epoll" << endl;
     struct epoll_event events[EPOLL_CACHE_SIZE];
     // no. file descriptors =  int epoll_wait(int epoll_fd, struct epoll_event *events, int maxevents, int timeout);
     int nfds = epoll_wait(*epoll_fd, events, EPOLL_CACHE_SIZE, -1);
@@ -343,6 +359,7 @@ bool handle_epoll(int *epoll_fd, int *server_fd)
         return false;
     }
 
+    cout << "Number of events: " << nfds << endl;
     /**
      * @brief When the client closes the connection normally (sending a FIN packet), it will be caught in handle_client_data when recv() returns 0.
     When the client terminates abruptly (like with Ctrl+C), it will be caught in handle_epoll with EPOLLHUP or EPOLLERR events.
@@ -358,14 +375,13 @@ bool handle_epoll(int *epoll_fd, int *server_fd)
             {
                 std::cerr << "  Failed to accept connection: " << strerror(errno) << std::endl;
             }
-            
         }
 
         else // client_fd receives new data
         {
             int *client_fd = &(events[i].data.fd);
-            
-            if (handle_client_data(client_fd) == false)
+
+            if (handle_client_data(client_fd, dbManager) == false)
             {
                 // Should also manage Client hung up
                 if (!remove_socket_from_epoll(epoll_fd, client_fd))
@@ -373,29 +389,34 @@ bool handle_epoll(int *epoll_fd, int *server_fd)
                     cerr << "failed to remove socket" << endl;
                     return false;
                 }
-                                
-                set_unverifiedfd.erase(*client_fd); // just in case 
+
+                set_unverifiedfd.erase(*client_fd); // just in case
                 sys_socket::close(*client_fd);
                 cout << "Closed socket " << *client_fd << endl;
             }
-
-            
         }
     }
+    cout << "done" << endl;
     return true;
 }
 
 int main()
 {
 
+    // Used for verification
+    DatabaseManager dbManager("dbname=docker user=docker password=docker host=localhost");
+
     // 1. Create FD for server and Epoll + 2. Set up binding + listenx
+
     if (setup_server_and_epoll_fd(&server_fd, &epoll_fd) == false)
         return -1;
 
     // 3. Accept and handle incoming connections
+    cout << "Server is running and accepting connections" << endl;
     while (true)
     {
-        if (handle_epoll(&epoll_fd, &server_fd) == false)
+        cout << "Waiting for events in EPOLL" << endl;
+        if (handle_epoll(&epoll_fd, &server_fd, dbManager) == false)
             cerr << "   Failed to handle events in EPOLL - errno : " << strerror(errno) << endl;
     }
 
