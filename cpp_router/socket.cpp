@@ -4,19 +4,64 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <set>
 #include <string>
 #include <sys/epoll.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <signal.h> // used to gracefully terminate client terminal
-
+#include <pqxx/pqxx>
+#include <unordered_map> // hash table for O(1) lookup, VERIFIED client FDs
 #define SERVER_PORT 8888
 #define PENDING_CONNECTION_BACKLOG 10000
-#define EPOLL_CACHE_SIZE 10000
+#define EPOLL_CACHE_SIZE 1000000
 
+class DatabaseManager {
+private:
+    pqxx::connection conn;
+
+public:
+    DatabaseManager(const std::string& connString) : conn(connString) {}
+
+    bool verifyUser(const std::string& username, const std::string& password) {
+        try {
+            pqxx::work txn(conn);
+            pqxx::result result = txn.exec(
+                "SELECT * FROM users WHERE username = " + txn.quote(username)
+            );
+
+            if (result.empty()) {
+                return false; // User not found
+            }
+
+            // Here you would typically check the password
+            // For this example, we're just checking if the user exists
+            // In a real application, you'd need to hash the password and compare it
+
+            txn.commit();
+            return true;
+        } catch (const std::exception& e) {
+            std::cerr << "Error verifying user: " << e.what() << std::endl;
+            return false;
+        }
+    }
+
+    // You can add more methods here for other database operations
+};
 
 int server_fd = -1;
 int epoll_fd = -1;
+const int MAX_SENDERCOMPID = 1000000; // 1 million unique sendercompids, we will use this for an array. Better than hashtable
+
+std::set<int> set_unverifiedfd; // O(log n) for worse case hash collision, this is fine since n is small and cant really build up.
+
+// This array of unordered sets allows for multiple sessions per SenderCompID.
+// Each index in the array represents a unique SenderCompID (up to MAX_SENDERCOMPID).
+// The unordered_set at each index contains the file descriptors (fds) of verified sessions for that SenderCompID.
+// When a new session is verified, its fd is added to the corresponding set.
+// When a session ends or becomes inactive, its fd is removed from the set.
+// This structure enables efficient management of multiple concurrent sessions for each SenderCompID.
+std::array<std::unordered_set<int>, MAX_SENDERCOMPID> array_sendercompid_verifiedfd; 
 
 using namespace std;
 namespace arpa_inet
@@ -193,8 +238,18 @@ bool setup_server_and_epoll_fd(int *server_fd, int *epoll_fd)
     bind_and_listen_server_fd(server_fd);
     return true;
 }
+
+bool verify_new_client(const char* buffer, size_t buffer_size) {
+    // Authentication logic here
+    // For now, we'll just assume the client is authenticated
+    // We need to check for the username, and password, and check if it exists in the database.
+    // we need to use a vector to map the sendercompid to fd
+    return true;
+}
+
 bool handle_new_client_connection(int *epoll_fd, int *server_fd)
 {
+    
     int client_fd = sys_socket::accept(*server_fd, nullptr, nullptr);
     while (client_fd > 0)
     {
@@ -202,9 +257,9 @@ bool handle_new_client_connection(int *epoll_fd, int *server_fd)
             return -1;
 
         // If we successfully accepted a connection, handle the new client
-        add_socket_to_epoll(epoll_fd, &client_fd, EPOLLIN);
+        set_unverifiedfd.insert(client_fd);
         print_success("Accepted a new connection");
-        client_fd = sys_socket::accept(*server_fd, nullptr, nullptr);
+        client_fd = sys_socket::accept(*server_fd, nullptr, nullptr); // less than 0 if no new client
     }
 
     if (client_fd < 0)
@@ -227,30 +282,52 @@ bool handle_new_client_connection(int *epoll_fd, int *server_fd)
 bool handle_client_data(int *client_fd)
 {
     // 5. Receives bytes
-    const int BUFFER_SIZE = 64 * 1024; // 64 kb buffer
+    const int BUFFER_SIZE = 64 * 1024; 
     char buffer[BUFFER_SIZE];
     ssize_t bytes_received;
+
     while (true)
     {
         cstring::memset(buffer, 0, BUFFER_SIZE);
         bytes_received = sys_socket::recv(*client_fd, buffer, BUFFER_SIZE - 1, 0); // last byte is for null terminator
-
+        
         if (bytes_received > 0)
         {
             buffer[bytes_received] = '\0'; // Null-terminate the received data
-            cout << "Received " << bytes_received << " bytes: " << buffer << endl;
+            
+            if (set_unverifiedfd.count(*client_fd) > 0) {
 
+                if (verify_new_client(buffer, bytes_received) == true) {
+
+                    // TODO get the sendercompid from the buffer
+                    set_unverifiedfd.erase(*client_fd);
+                    array_sendercompid_verifiedfd[sendercompid].insert(*client_fd);                    
+                } else {
+                    return false;
+                }
+            } else {
+                // Client is already verified, process the data normally
+                cout << "Received " << bytes_received << " bytes: " << buffer << endl;
+            }
             return true;
         }
         else if (bytes_received == 0)
         {
-            cout << "Received 0 bytes: Removing port" << buffer << endl;            
+            cout << "Received 0 bytes: Removing port" << endl;            
             return false;
         }
         else if (bytes_received < 0)
         {
-            cerr << "Error receiving data from client" << endl;
-            return false;
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                // No more data to read, continue the loop
+                continue;
+            }
+            else
+            {
+                cerr << "Error receiving data from client: " << strerror(errno) << endl;
+                return false;
+            }
         }
     }
 }
@@ -277,7 +354,7 @@ bool handle_epoll(int *epoll_fd, int *server_fd)
         if (events[i].data.fd == *server_fd) // server_fd wants to establish new client connection
 
         {
-            if (!handle_new_client_connection(epoll_fd, server_fd))
+            if (handle_new_client_connection(epoll_fd, server_fd) == false)
             {
                 std::cerr << "  Failed to accept connection: " << strerror(errno) << std::endl;
             }
@@ -296,7 +373,8 @@ bool handle_epoll(int *epoll_fd, int *server_fd)
                     cerr << "failed to remove socket" << endl;
                     return false;
                 }
-
+                                
+                set_unverifiedfd.erase(*client_fd); // just in case 
                 sys_socket::close(*client_fd);
                 cout << "Closed socket " << *client_fd << endl;
             }

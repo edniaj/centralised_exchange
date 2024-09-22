@@ -9,14 +9,18 @@ docker exec -it cpp_router /bin/bash
 ~~ redis database - figure out how to set up ~~
 ~~Set up (mock data) and Delete all redis data in the database - python file~~
 ~~Create a frontend to view the orderbook~~
+~~Set up database + mock user account~~
 
-Set up database + mock user account
+
+
+Create efficient getter function to disassemble the fix protocol message
+User authentication ->  Tag user to a FD in the router
 
 Fix disassembler to interpret the data - routes should be inside the disassembler
+Remove fd from verifiedfd once done
 
 
-
-User authentication ->  Tag user to a FD in the router (work on authentication later)
+multi thread the logon with the orderbook updates
 
 Create liquidation engine - redis is single thread os it can be handled in the routes. But what if we are using multiple redis db to handle the orderbook ?
 
@@ -30,4 +34,6 @@ Copy FTX UI and finish up i guess
 implement edge-triggered over level-triggered
 ## Design decisions
 
-Choosing level-triggered epoll over edge-triggered 
+###Choosing level-triggered epoll over edge-triggered 
+Potential busy loop when we user-authenticate while listening for orderbook updates
+Solve - Multi-thread the authentication and orderbook updates. Authentication will assign file descriptor that orderbook will listen from
