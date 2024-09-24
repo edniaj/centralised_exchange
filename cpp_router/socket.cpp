@@ -87,7 +87,7 @@ const int MAX_SENDERCOMPID = 10000; // 1 million unique sendercompids, we will u
 // When a session ends or becomes inactive, its fd is removed from the set.
 // This structure enables efficient management of multiple concurrent sessions for each SenderCompID.
 
-std::set<int> set_unverifiedfd;
+std::unordered_set<int> unorderedset_unverifiedfd;
 std::array<std::unordered_set<int>, MAX_SENDERCOMPID> array_sendercompid_verifiedfd;
 
 class DatabaseManager
@@ -326,7 +326,7 @@ bool handle_new_client_connection(int *epoll_fd, int *server_fd)
             return -1;
 
         // If we successfully accepted a connection, handle the new client
-        set_unverifiedfd.insert(client_fd);
+        unorderedset_unverifiedfd.insert(client_fd);
         print_success("Accepted a new connection");
         client_fd = sys_socket::accept(*server_fd, nullptr, nullptr); // less than 0 if no new client
     }
@@ -365,14 +365,14 @@ bool handle_client_data(int *client_fd, DatabaseManager& dbManager)
             FIXMessage fixMessage(received_data);
 
 
-            if (set_unverifiedfd.count(*client_fd) > 0)
+            if (unorderedset_unverifiedfd.count(*client_fd) > 0)
             {
                 std::string username = "admin";
                 std::string password = "password";
 
                 if (verify_new_client(username, password, dbManager))
                 {
-                    set_unverifiedfd.erase(*client_fd);
+                    unorderedset_unverifiedfd.erase(*client_fd);
 
                     // TODO: Get the sendercompid from the buffer
                     int sendercompid = 1; // This should be extracted from the buffer
@@ -457,7 +457,7 @@ bool handle_epoll(int *epoll_fd, int *server_fd, DatabaseManager& dbManager)
                     return false;
                 }
 
-                set_unverifiedfd.erase(*client_fd); // just in case
+                unorderedset_unverifiedfd.erase(*client_fd); // just in case
                 sys_socket::close(*client_fd);
                 cout << "Closed socket " << *client_fd << endl;
             }
