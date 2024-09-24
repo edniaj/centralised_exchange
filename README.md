@@ -52,7 +52,7 @@ With Kernel Bypass:
 Direct Access: Kernel Bypass allows your application to access network data directly from the NIC, skipping the OS kernel's networking stack.
 Benefits: This reduces the number of steps and delays, leading to lower latency and higher throughput.
 
-###4. Zero-copy eliminate unnecessary data copying between different parts of your system (like between memory and network buffers)
+### 4. Zero-copy eliminate unnecessary data copying between different parts of your system (like between memory and network buffers)
 Traditional Flow: Data might be copied multiple times:
 From the NIC to kernel buffers.
 From kernel buffers to your application’s buffers.

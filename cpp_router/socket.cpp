@@ -148,51 +148,37 @@ public:
         size_t end = message.length();
 
         while (pos < end) {
-            size_t equalPos = message.find('=', pos);
-            if (equalPos == std::string::npos) break; //find() to locate the '=' and '\x01' (SOH) characters, which separate fields in FIX messages.
+            size_t equalPos = message.find('=', pos); // attempt to find '=' from pos
+            if (equalPos == std::string::npos) break; // npos represents the largest possible value for an element of type size_t, return when not found
 
-            size_t solPos = message.find('\x01', equalPos);
-            if (solPos == std::string::npos) solPos = end;
+            size_t sohPos = message.find('\x01', equalPos); // \x01 is a hexadecimal representation with val 1
+            if (sohPos == std::string::npos) sohPos = end;  // if \x01 not found, \x01 represent end of each tag. sohPos == StartOfHeadingPosition
 
-            int tag = std::stoi(message.substr(pos, equalPos - pos)); //string to integer O(n)
-            std::string value = message.substr(equalPos + 1, solPos - equalPos - 1);
+            int tag = std::stoi(message.substr(pos, equalPos - pos)); // pos to equalPos e.g. "tag"=14
+            std::string value = message.substr(equalPos + 1, sohPos - equalPos - 1); // tag="14"
 
             fields[tag] = value;
             fieldOrder.push_back(tag);
 
-            pos = solPos + 1;
+            pos = sohPos + 1;
         }
     }
 
-    std::string getField(int tag) const {
-        auto it = fields.find(tag); // automatic type deduction | O(1) unordered_map
-        return (it != fields.end()) ? it->second : ""; // Returns iterator or ""
+    std::string getField(int tag) const {  // const is a qualifier : doesnt mess with Object state 
+        auto it = fields.find(tag); // automatic type deduction | it is iterator. iterator to a map is a pair object, first : key, second: value
+        return (it != fields.end()) ? it->second : ""; // Returns iterator or "" it->second means it.second
     }
 
-    const std::vector<int>& getFieldOrder() const { // keep this shit in. Might be useful later when reconstructing the FIX message.
-        /*
-         * Returning the original field order is crucial for several reasons:
-         * 
-         * 1. Message Validation and Compliance:
-         *    - FIX protocol often requires specific field sequences.
-         *    - E.g., Logon messages (MsgType=A) need BeginString (8), BodyLength (9), MsgType (35) in order.
-         *    - Order messages (MsgType=D) may require specific field ordering.
-         *    - Preserving order prevents rejection by systems enforcing strict FIX standards.
-         * 
-         * 2. Processing Logic:
-         *    - Field order can dictate message processing.
-         *    - Later fields might depend on earlier ones.
-         *    - Sequential processing is simplified, especially for streaming data.
-         * 
-         * 3. Logging and Debugging:
-         *    - Aids in message reconstruction for auditing and debugging.
-         *    - Ensures logs accurately reflect the original message structure.
-         *    - Facilitates easier tracing and issue resolution.
-         */
-        return fieldOrder;
+    // New method to print the FIXMessage contents
+    void print() const {
+        std::cout << "FIXMessage Contents:" << std::endl;
+        for (const auto& tag : fieldOrder) {
+            std::cout<< tag << ":" << fields.at(tag) << std::endl;
+        }
     }
 
     // Add Validation later. 
+    
 };
 
 void print_success(const char *message)
@@ -363,12 +349,12 @@ bool handle_client_data(int *client_fd, DatabaseManager& dbManager)
             std::string received_data(buffer.data(), bytes_received);  // Convert to std::string so that we can manipulate easier
 
             FIXMessage fixMessage(received_data);
-
-
+            fixMessage.print();
+            
             if (unorderedset_unverifiedfd.count(*client_fd) > 0)
             {
-                std::string username = "admin";
-                std::string password = "password";
+                std::string username = fixMessage.getField(553);
+                std::string password = fixMessage.getField(554);
 
                 if (verify_new_client(username, password, dbManager))
                 {
