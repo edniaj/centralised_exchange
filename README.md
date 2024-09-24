@@ -10,15 +10,13 @@ docker exec -it cpp_router /bin/bash
 ~~Set up (mock data) and Delete all redis data in the database - python file~~
 ~~Create a frontend to view the orderbook~~
 ~~Set up database + mock user account~~
+~~Create efficient getter function to disassemble the fix protocol message~~
+~~User authentication ->  Tag user to a FD in the router~~
 
+~~Fix disassembler to interpret the data~~
+~~Routes should be inside the disassembler~~
 
-
-Create efficient getter function to disassemble the fix protocol message
-User authentication ->  Tag user to a FD in the router
-
-Fix disassembler to interpret the data - routes should be inside the disassembler
 Remove fd from verifiedfd once done
-
 
 multi thread the logon with the orderbook updates
 
@@ -44,6 +42,7 @@ implement edge-triggered over level-triggered
 ### 3. Kernel bypass on the server side. Lower latency in processing (DPDK/ SOLARFLARE might be preferable) - instead of copying to the kernel space, we access it directly in the user space (important!)
 Traditional Flow:
 
+
 Data Arrival: When data arrives from the network (like from a switch), it goes to the Network Interface Card (NIC).
 Kernel Processing: The Operating System (OS) kernel handles this data using its networking stack, which involves several steps and can introduce delays.
 Application Access: Your application (e.g., your C++ server) then accesses this data from the kernel, often through system calls that add more latency.
@@ -63,6 +62,8 @@ Benefits: This further reduces latency and saves CPU resources because less time
 #### Why Use Both Kernel bypass and Zero-copying
 Further Latency Reduction: While Kernel Bypass removes delays from the OS layer, Zero-Copy optimizes the data handling within your application.
 Enhanced Performance: Especially critical in environments like high-frequency trading, where every microsecond counts.
+
+### 5. Multi-core processing on the server side
 
 ## Design decisions
 

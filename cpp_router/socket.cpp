@@ -13,6 +13,7 @@
 #include <pqxx/pqxx>
 #include <array>
 #include <unordered_set> // hash table for O(1) lookup, VERIFIED client FDs
+#include <thread>
 #define SERVER_PORT 8888
 #define PENDING_CONNECTION_BACKLOG 10000
 #define EPOLL_CACHE_SIZE 10000
@@ -75,20 +76,7 @@ namespace sys_epoll
 
 }
 
-int server_fd = -1;
-int epoll_fd = -1;
-const int MAX_SENDERCOMPID = 10000; // 1 million unique sendercompids, we will use this for an array. Better than hashtable
-
-// O(log n) for worse case hash collision, this is fine since n is small and cant really build up.
-// This array of unordered sets allows for multiple sessions per SenderCompID.
-// Each index in the array represents a unique SenderCompID (up to MAX_SENDERCOMPID).
-// The unordered_set at each index contains the file descriptors (fds) of verified sessions for that SenderCompID.
-// When a new session is verified, its fd is added to the corresponding set.
-// When a session ends or becomes inactive, its fd is removed from the set.
-// This structure enables efficient management of multiple concurrent sessions for each SenderCompID.
-
-std::unordered_set<int> unorderedset_unverifiedfd;
-std::array<std::unordered_set<int>, MAX_SENDERCOMPID> array_sendercompid_verifiedfd;
+#define MAX_SENDERCOMPID 10000 // 1 million unique sendercompids, we will use this for an array. Better than hashtable
 
 class DatabaseManager
 {
@@ -186,7 +174,39 @@ void print_success(const char *message)
     cout << "Success : " << message << "\n"
          << endl;
 }
-bool add_socket_to_epoll(int *epoll_fd, int *socket_fd, uint32_t events)
+
+class TCPServer {
+private:
+    int server_fd;
+    int epoll_fd;
+    DatabaseManager& dbManager;
+    std::unordered_set<int> unorderedset_unverifiedfd;
+    std::array<std::unordered_set<int>, MAX_SENDERCOMPID> array_sendercompid_verifiedfd;
+
+    // Private methods (implementation details)
+    bool add_socket_to_epoll(int socket_fd, uint32_t events);
+    bool remove_socket_from_epoll(int socket_fd);
+    bool bind_and_listen();
+    bool set_non_blocking(int fd);
+    bool handle_new_client_connection();
+    bool handle_client_data(int client_fd);
+    bool verify_new_client(const std::string& username, const std::string& password);
+    
+
+public:
+    TCPServer(DatabaseManager& db_manager);
+
+    bool setup();
+    void run_login();
+    void run_orderbook();
+    void run();
+};
+
+TCPServer::TCPServer(DatabaseManager& db_manager) : dbManager(db_manager), server_fd(-1), epoll_fd(-1) {}
+
+
+
+bool TCPServer::add_socket_to_epoll(int socket_fd, uint32_t events)
 {
     /**
 
@@ -199,20 +219,22 @@ bool add_socket_to_epoll(int *epoll_fd, int *socket_fd, uint32_t events)
      */
     struct epoll_event event;
     event.events = events;
-    event.data.fd = *socket_fd;
+    event.data.fd = socket_fd;
 
-    if (sys_epoll::epoll_ctl(*epoll_fd, EPOLL_CTL_ADD, *socket_fd, &event) == -1)
+    if (sys_epoll::epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_fd, &event) == -1)
     {
         cerr << "Failed to add socket to epoll" << endl;
         return false;
     }
     return true;
 }
-bool remove_socket_from_epoll(int *epoll_fd, int *socket_fd)
+
+bool TCPServer::remove_socket_from_epoll(int socket_fd)
 {
-    return epoll_ctl(*epoll_fd, EPOLL_CTL_DEL, *socket_fd, nullptr) != -1;
+    return epoll_ctl(epoll_fd, EPOLL_CTL_DEL, socket_fd, nullptr) != -1;
 }
-bool bind_and_listen_server_fd(int *server_fd)
+
+bool TCPServer::bind_and_listen()
 {
     cout << "   Binding socket to server IP and port\n   Initializing server_address" << endl;
     struct netinet_in::sockaddr_in server_address;
@@ -222,11 +244,11 @@ bool bind_and_listen_server_fd(int *server_fd)
     server_address.sin_addr.s_addr = arpa_inet::inet_addr("127.0.0.1");
     server_address.sin_port = htons(SERVER_PORT); // host byte order to network byte order, not sure why this isnt implicit. also its BYTE. from arpa
 
-    int bind_server_output = sys_socket::bind(*server_fd, (struct sockaddr *)&server_address, sizeof(server_address));
+    int bind_server_output = sys_socket::bind(server_fd, (struct sockaddr *)&server_address, sizeof(server_address));
     if (bind_server_output < 0)
     {
         cerr << "Terminating ... failed to bind socket\n    " << strerror(errno) << std::endl;
-        sys_socket::close(*server_fd);
+        sys_socket::close(server_fd);
         return false;
     }
 
@@ -234,13 +256,14 @@ bool bind_and_listen_server_fd(int *server_fd)
     // 3. Set the socket to listen for incoming connections
     cout << "   Set Listening to Server socket" << endl;
 
-    if (sys_socket::listen(*server_fd, PENDING_CONNECTION_BACKLOG) < 0)
+    if (sys_socket::listen(server_fd, PENDING_CONNECTION_BACKLOG) < 0)
         cerr << "Terminating ... socket cant listen" << endl;
 
     print_success("Listening on server fd");
     return true;
 }
-bool set_non_blocking(int *fd)
+
+bool TCPServer::set_non_blocking(int fd)
 {
     /*
     The |= operator is a bitwise OR assignment operator. It adds the O_NONBLOCK flag to the existing flags.
@@ -249,25 +272,26 @@ bool set_non_blocking(int *fd)
     int fcntl(int fd, int cmd, ... arg)
 
     */
-    int flags = fcntl(*fd, F_GETFL, 0);
+    int flags = fcntl(fd, F_GETFL, 0);
     if (flags == -1)
         return false;
 
     flags |= O_NONBLOCK;
 
-    if (fcntl(*fd, F_SETFL, flags) == -1)
+    if (fcntl(fd, F_SETFL, flags) == -1)
         return false;
 
     print_success("Success: Set non blocking to fd");
     return true;
 }
-bool setup_server_and_epoll_fd(int *server_fd, int *epoll_fd)
+
+bool TCPServer::setup()
 {
     cout << "\n   Creating file descriptor" << endl;
-    *server_fd = sys_socket::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    server_fd = sys_socket::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     set_non_blocking(server_fd);
-    *epoll_fd = sys_epoll::epoll_create1(0);
-    if (*server_fd == -1)
+    epoll_fd = sys_epoll::epoll_create1(0);
+    if (server_fd == -1)
     {
         cerr << "Terminating ... failed to create socket" << endl;
         return false;
@@ -276,7 +300,7 @@ bool setup_server_and_epoll_fd(int *server_fd, int *epoll_fd)
     {
         print_success("Created FD for SOCKET SERVER ");
     }
-    if (*epoll_fd == -1)
+    if (epoll_fd == -1)
     {
         cerr << "Terminating ... failed to create epoll FD" << endl;
         return false;
@@ -285,36 +309,35 @@ bool setup_server_and_epoll_fd(int *server_fd, int *epoll_fd)
     {
         print_success("Created FD for EPOLL ");
     }
-    if (!add_socket_to_epoll(epoll_fd, server_fd, EPOLLIN))
+    if (!add_socket_to_epoll(server_fd, EPOLLIN))
     {
         cerr << "Failed to add server FD into EPOLLFD" << endl;
         return false;
     };
     print_success("Added server_fd into epoll_fd");
-    bind_and_listen_server_fd(server_fd);
+    bind_and_listen();
     return true;
 }
-bool verify_new_client(const std::string& username, const std::string& password, DatabaseManager& dbManager)
-// std::string& is a reference to a string. It's an alias for an existing string object.
-//std::string* is a pointer to a string. It stores the memory address of a string object.
+
+bool TCPServer::verify_new_client(const std::string& username, const std::string& password)
 {
     // Authentication logic here
     // We need to check for the username and password in the database
     return dbManager.verifyUser(username, password);
 }
-bool handle_new_client_connection(int *epoll_fd, int *server_fd)
-{
 
-    int client_fd = sys_socket::accept(*server_fd, nullptr, nullptr);
+bool TCPServer::handle_new_client_connection()
+{
+    int client_fd = sys_socket::accept(server_fd, nullptr, nullptr);
     while (client_fd > 0)
     {
-        if ((set_non_blocking(&client_fd) && add_socket_to_epoll(epoll_fd, &client_fd, EPOLLIN | EPOLLET)) == false)
-            return -1;
+        if ((set_non_blocking(client_fd) && add_socket_to_epoll(client_fd, EPOLLIN | EPOLLET)) == false)
+            return false;
 
         // If we successfully accepted a connection, handle the new client
         unorderedset_unverifiedfd.insert(client_fd);
         print_success("Accepted a new connection");
-        client_fd = sys_socket::accept(*server_fd, nullptr, nullptr); // less than 0 if no new client
+        client_fd = sys_socket::accept(server_fd, nullptr, nullptr); // less than 0 if no new client
     }
 
     if (client_fd < 0)
@@ -333,7 +356,8 @@ bool handle_new_client_connection(int *epoll_fd, int *server_fd)
 
     return true;
 }
-bool handle_client_data(int *client_fd, DatabaseManager& dbManager)
+
+bool TCPServer::handle_client_data(int client_fd)
 {
     const int BUFFER_SIZE = 1024*16;
     std::vector<char> buffer(BUFFER_SIZE); // dynamically sized array, handle malloc dealloc
@@ -341,7 +365,7 @@ bool handle_client_data(int *client_fd, DatabaseManager& dbManager)
 
     while (true)
     {
-        bytes_received = sys_socket::recv(*client_fd, buffer.data(), buffer.size(), 0);
+        bytes_received = sys_socket::recv(client_fd, buffer.data(), buffer.size(), 0);
         cout << "bytes received: " << bytes_received << endl;
         if (bytes_received > 0)
         {
@@ -351,18 +375,18 @@ bool handle_client_data(int *client_fd, DatabaseManager& dbManager)
             FIXMessage fixMessage(received_data);
             fixMessage.print();
             
-            if (unorderedset_unverifiedfd.count(*client_fd) > 0)
+            if (unorderedset_unverifiedfd.count(client_fd) > 0)
             {
                 std::string username = fixMessage.getField(553);
                 std::string password = fixMessage.getField(554);
 
-                if (verify_new_client(username, password, dbManager))
+                if (verify_new_client(username, password))
                 {
-                    unorderedset_unverifiedfd.erase(*client_fd);
+                    unorderedset_unverifiedfd.erase(client_fd);
 
                     // TODO: Get the sendercompid from the buffer
                     int sendercompid = 1; // This should be extracted from the buffer
-                    array_sendercompid_verifiedfd[sendercompid].insert(*client_fd);
+                    array_sendercompid_verifiedfd[sendercompid].insert(client_fd);
                     
                     std::cout << "Client verified: " << username << std::endl;
                 }
@@ -399,79 +423,85 @@ bool handle_client_data(int *client_fd, DatabaseManager& dbManager)
         }
     }
 }
-bool handle_epoll(int *epoll_fd, int *server_fd, DatabaseManager& dbManager)
-{   
-    cout << "Handling epoll" << endl;
-    struct epoll_event events[EPOLL_CACHE_SIZE];
-    // no. file descriptors =  int epoll_wait(int epoll_fd, struct epoll_event *events, int maxevents, int timeout);
-    int nfds = epoll_wait(*epoll_fd, events, EPOLL_CACHE_SIZE, -1);
 
-    if (nfds < 0)
-    {
-        cerr << "   Failed to read epoll" << endl;
-        return false;
-    }
-
-    cout << "Number of events: " << nfds << endl;
-    /**
-     * @brief When the client closes the connection normally (sending a FIN packet), it will be caught in handle_client_data when recv() returns 0.
-    When the client terminates abruptly (like with Ctrl+C), it will be caught in handle_epoll with EPOLLHUP or EPOLLERR events.
-     *
-     */
-    // Iterate through the epoll
-    for (int i = 0; i < nfds; i++)
-    {
-        if (events[i].data.fd == *server_fd) // server_fd wants to establish new client connection
-
-        {
-            if (handle_new_client_connection(epoll_fd, server_fd) == false)
-            {
-                std::cerr << "  Failed to accept connection: " << strerror(errno) << std::endl;
-            }
-        }
-
-        else // client_fd receives new data
-        {
-            int *client_fd = &(events[i].data.fd);
-
-            if (handle_client_data(client_fd, dbManager) == false)
-            {
-                // Should also manage Client hung up
-                if (!remove_socket_from_epoll(epoll_fd, client_fd))
-                {
-                    cerr << "failed to remove socket" << endl;
-                    return false;
-                }
-
-                unorderedset_unverifiedfd.erase(*client_fd); // just in case
-                sys_socket::close(*client_fd);
-                cout << "Closed socket " << *client_fd << endl;
-            }
-        }
-    }
-    cout << "done" << endl;
-    return true;
-}
-
-int main()
+void TCPServer::run_login()
 {
-
-    // Used for verification
-    DatabaseManager dbManager("dbname=docker user=docker password=docker host=localhost");
-
-    // 1. Create FD for server and Epoll + 2. Set up binding + listenx
-
-    if (setup_server_and_epoll_fd(&server_fd, &epoll_fd) == false)
-        return -1;
-
-    // 3. Accept and handle incoming connections
     cout << "Server is running and accepting connections" << endl;
     while (true)
     {
         cout << "Waiting for events in EPOLL" << endl;
-        if (handle_epoll(&epoll_fd, &server_fd, dbManager) == false)
-            cerr << "   Failed to handle events in EPOLL - errno : " << strerror(errno) << endl;
+        struct epoll_event events[EPOLL_CACHE_SIZE];
+        // no. file descriptors =  int epoll_wait(int epoll_fd, struct epoll_event *events, int maxevents, int timeout);
+        int nfds = epoll_wait(epoll_fd, events, EPOLL_CACHE_SIZE, -1);
+
+        if (nfds < 0)
+        {
+            cerr << "   Failed to read epoll" << endl;
+            continue;
+        }
+
+        cout << "Number of events: " << nfds << endl;
+        /**
+         * @brief When the client closes the connection normally (sending a FIN packet), it will be caught in handle_client_data when recv() returns 0.
+        When the client terminates abruptly (like with Ctrl+C), it will be caught in handle_epoll with EPOLLHUP or EPOLLERR events.
+         *
+         */
+        // Iterate through the epoll
+        for (int i = 0; i < nfds; i++)
+        {
+            if (events[i].data.fd == server_fd) // server_fd wants to establish new client connection
+            {
+                if (handle_new_client_connection() == false)
+                {
+                    std::cerr << "  Failed to accept connection: " << strerror(errno) << std::endl;
+                }
+            }
+            else // client_fd receives new data
+            {
+                int client_fd = events[i].data.fd;
+
+                if (handle_client_data(client_fd) == false)
+                {
+                    if (!remove_socket_from_epoll(client_fd))
+                    {
+                        cerr << "failed to remove socket" << endl;
+                        continue;
+                    }
+
+                    unorderedset_unverifiedfd.erase(client_fd); // just in case
+                    sys_socket::close(client_fd);
+                    cout << "Closed socket " << client_fd << endl;
+                }
+            }
+        }
+        cout << "done" << endl;
     }
+}
+
+void TCPServer::run_orderbook() 
+{
+    cout<<"running orderbook"<<endl;
+}
+
+void TCPServer::run() {
+    std::thread login_thread(&TCPServer::run_login, this);
+    std::thread orderbook_thread(&TCPServer::run_orderbook, this);
+
+    login_thread.join();
+    orderbook_thread.join();
+}
+
+int main()
+{
+    // Used for verification
+    DatabaseManager dbManager("dbname=docker user=docker password=docker host=localhost");
+    TCPServer server(dbManager);
+
+    if (!server.setup()) {
+        return -1;
+    }
+
+    server.run();
 
     return 0;
 }

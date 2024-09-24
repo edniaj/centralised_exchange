@@ -23,6 +23,7 @@ int main()
 
         // Print the results for 'admin'
         std::cout << "User data for 'admin':\n";
+        
         for (const auto &row : result_admin)
         {
             for (const auto &field : row)

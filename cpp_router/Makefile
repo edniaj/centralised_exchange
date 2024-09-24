@@ -8,7 +8,7 @@ TARGET=server
 SOURCES=socket.cpp
 
 # Libraries to link
-LIBS=-lpqxx
+LIBS=-lpqxx -pthread
 
 # Rule to build the executable
 $(TARGET): $(SOURCES)
@@ -16,4 +16,4 @@ $(TARGET): $(SOURCES)
 
 # Phony target for cleaning up
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) $(TARGET).exe
