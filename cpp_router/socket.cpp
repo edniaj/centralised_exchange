@@ -127,6 +127,73 @@ public:
 
     // You can add more methods here for other database operations
 };
+#include <unordered_map>
+#include <string>
+#include <vector>
+
+class FIXMessage {
+
+// Reference: https://www.fixtrading.org/online-specification/introduction/
+private:
+    std::unordered_map<int, std::string> fields;
+    std::vector<int> fieldOrder;
+
+public:
+    FIXMessage(const std::string& message) {
+        parse(message);
+    }
+
+    void parse(const std::string& message) {
+        size_t pos = 0;
+        size_t end = message.length();
+
+        while (pos < end) {
+            size_t equalPos = message.find('=', pos);
+            if (equalPos == std::string::npos) break; //find() to locate the '=' and '\x01' (SOH) characters, which separate fields in FIX messages.
+
+            size_t solPos = message.find('\x01', equalPos);
+            if (solPos == std::string::npos) solPos = end;
+
+            int tag = std::stoi(message.substr(pos, equalPos - pos)); //string to integer O(n)
+            std::string value = message.substr(equalPos + 1, solPos - equalPos - 1);
+
+            fields[tag] = value;
+            fieldOrder.push_back(tag);
+
+            pos = solPos + 1;
+        }
+    }
+
+    std::string getField(int tag) const {
+        auto it = fields.find(tag); // automatic type deduction | O(1) unordered_map
+        return (it != fields.end()) ? it->second : ""; // Returns iterator or ""
+    }
+
+    const std::vector<int>& getFieldOrder() const { // keep this shit in. Might be useful later when reconstructing the FIX message.
+        /*
+         * Returning the original field order is crucial for several reasons:
+         * 
+         * 1. Message Validation and Compliance:
+         *    - FIX protocol often requires specific field sequences.
+         *    - E.g., Logon messages (MsgType=A) need BeginString (8), BodyLength (9), MsgType (35) in order.
+         *    - Order messages (MsgType=D) may require specific field ordering.
+         *    - Preserving order prevents rejection by systems enforcing strict FIX standards.
+         * 
+         * 2. Processing Logic:
+         *    - Field order can dictate message processing.
+         *    - Later fields might depend on earlier ones.
+         *    - Sequential processing is simplified, especially for streaming data.
+         * 
+         * 3. Logging and Debugging:
+         *    - Aids in message reconstruction for auditing and debugging.
+         *    - Ensures logs accurately reflect the original message structure.
+         *    - Facilitates easier tracing and issue resolution.
+         */
+        return fieldOrder;
+    }
+
+    // Add Validation later. 
+};
 
 void print_success(const char *message)
 {
@@ -282,24 +349,24 @@ bool handle_new_client_connection(int *epoll_fd, int *server_fd)
 }
 bool handle_client_data(int *client_fd, DatabaseManager& dbManager)
 {
-    // 5. Receives bytes
-    const int BUFFER_SIZE = 64 * 1024;
-    char buffer[BUFFER_SIZE];
+    const int BUFFER_SIZE = 1024*16;
+    std::vector<char> buffer(BUFFER_SIZE); // dynamically sized array, handle malloc dealloc
     ssize_t bytes_received;
 
     while (true)
     {
-        cstring::memset(buffer, 0, BUFFER_SIZE);
-        bytes_received = sys_socket::recv(*client_fd, buffer, BUFFER_SIZE - 1, 0); // last byte is for null terminator
+        bytes_received = sys_socket::recv(*client_fd, buffer.data(), buffer.size(), 0);
         cout << "bytes received: " << bytes_received << endl;
         if (bytes_received > 0)
         {
-            buffer[bytes_received] = '\0'; // Null-terminate the received data
+            buffer[bytes_received] = '\0';  // Null-terminate the received data
+            std::string received_data(buffer.data(), bytes_received);  // Convert to std::string so that we can manipulate easier
+
+            FIXMessage fixMessage(received_data);
+
 
             if (set_unverifiedfd.count(*client_fd) > 0)
             {
-                
-                
                 std::string username = "admin";
                 std::string password = "password";
 
@@ -322,7 +389,7 @@ bool handle_client_data(int *client_fd, DatabaseManager& dbManager)
             else
             {
                 // Client is already verified, process the data normally
-                cout << "Received " << bytes_received << " bytes: " << buffer << endl;
+                cout << "Received " << bytes_received << " bytes: " << received_data << endl;
             }
             return true;
         }

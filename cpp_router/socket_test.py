@@ -7,7 +7,7 @@ def send_logon(host, port, username, password, retries=5):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((host, port))
 
-            time.sleep(3)
+            # time.sleep(3)
             
             # Send Logon message
             logon_message = (
