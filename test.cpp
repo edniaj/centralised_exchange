@@ -1,8 +1,35 @@
 #include <iostream>
 #include <pqxx/pqxx>
 #include <string>
+#include <sw/redis++/redis++.h>
 
-int main()
+void test_redis()
+{
+    try
+    {
+        // Create a Redis object using a URI
+        sw::redis::Redis redis("tcp://127.0.0.1:6379");
+
+        // Test the connection with PING
+        auto pong = redis.ping();
+        std::cout << "Ping Response: " << pong << std::endl;
+
+        // Get all keys
+        std::vector<std::string> keys;
+        redis.keys("*", std::back_inserter(keys));
+        std::cout << "All keys in Redis:" << std::endl;
+        for (const auto& key : keys)
+        {
+            std::cout << key << std::endl;
+        }
+    }
+    catch (const sw::redis::Error &err)
+    {
+        std::cerr << "Redis Error: " << err.what() << std::endl;
+    }
+}
+
+void test_db()
 {
     try
     {
@@ -23,7 +50,7 @@ int main()
 
         // Print the results for 'admin'
         std::cout << "User data for 'admin':\n";
-        
+
         for (const auto &row : result_admin)
         {
             for (const auto &field : row)
@@ -51,15 +78,29 @@ int main()
                 }
                 std::cout << std::endl;
             }
-            // Commit the transaction
-            txn.commit();
         }
+
+        // Commit the transaction
+        txn.commit();
     }
     catch (const std::exception &e)
     {
         std::cerr << "Error: " << e.what() << std::endl;
+    }
+}
+
+
+int main()
+{
+    try
+    {
+        // test_db();
+        test_redis();
+        return 0;
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error in main: " << e.what() << std::endl;
         return 1;
     }
-
-    return 0;
 }

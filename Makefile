@@ -1,5 +1,5 @@
 # Compiler to use
-CC=g++
+CC=g++ -std=c++17
 
 # Output target executable name
 TARGET=test
@@ -8,7 +8,7 @@ TARGET=test
 SOURCES=test.cpp
 
 # Libraries to link
-LIBS=-lpqxx
+LIBS = -lredis++ -lhiredis -lpqxx
 
 # Rule to build the executable
 $(TARGET): $(SOURCES)

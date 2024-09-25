@@ -202,9 +202,7 @@ public:
     void run();
 };
 
-TCPServer::TCPServer(DatabaseManager& db_manager) : dbManager(db_manager), server_fd(-1), epoll_fd(-1) {}
-
-
+TCPServer::TCPServer(DatabaseManager& db_manager) : dbManager(db_manager), server_fd(-1), epoll_fd(-1) {} // Constructor (parameter) : member initializer list {}
 
 bool TCPServer::add_socket_to_epoll(int socket_fd, uint32_t events)
 {

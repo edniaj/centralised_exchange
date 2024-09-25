@@ -23,14 +23,25 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y \
     postgresql \
     postgresql-contrib \
     libpq-dev \
+    libhiredis-dev \
     && apt-get clean
 
-RUN apt-get install -y software-properties-common && \
-    add-apt-repository ppa:redislabs/redis && \
-    apt-get update && \
-    apt-get install -y redis-server && \ 
-    apt-get install libpqxx-dev
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common && \
+    DEBIAN_FRONTEND=noninteractive add-apt-repository ppa:redislabs/redis && \
+    DEBIAN_FRONTEND=noninteractive apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y redis-server libpqxx-dev
 
+# Install redis-plus-plus
+RUN git clone https://github.com/sewenew/redis-plus-plus.git && \
+    cd redis-plus-plus && \
+    mkdir build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make && \
+    make install && \
+    ldconfig && \
+    cd ../.. && \
+    rm -rf redis-plus-plus
 
 # Set the working directory inside the container
 WORKDIR /usr/src/app
@@ -56,6 +67,3 @@ USER root
 # Add a script to start both Redis and PostgreSQL
 COPY start_services.sh /start_services.sh
 RUN chmod +x /start_services.sh
-
-# Specify the command to run when the container starts
-CMD ["/start_services.sh"]

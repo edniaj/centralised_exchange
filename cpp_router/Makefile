@@ -8,7 +8,7 @@ TARGET=server
 SOURCES=socket.cpp
 
 # Libraries to link
-LIBS=-lpqxx -pthread
+LIBS=-lpqxx -pthread -lredis++
 
 # Rule to build the executable
 $(TARGET): $(SOURCES)
