@@ -1,5 +1,5 @@
-# Compiler to use
-CC=g++
+# Compiler to use , must be c++17 and above for redis++
+CC=g++ -std=c++17
 
 # Output target executable name
 TARGET=server
@@ -8,7 +8,7 @@ TARGET=server
 SOURCES=socket.cpp
 
 # Libraries to link
-LIBS=-lpqxx -pthread -lredis++
+LIBS=-lpqxx -pthread -lredis++ -lhiredis
 
 # Rule to build the executable
 $(TARGET): $(SOURCES)

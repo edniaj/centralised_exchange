@@ -14,6 +14,8 @@
 #include <array>
 #include <unordered_set> // hash table for O(1) lookup, VERIFIED client FDs
 #include <thread>
+#include <sw/redis++/redis++.h>
+
 #define SERVER_PORT 8888
 #define PENDING_CONNECTION_BACKLOG 10000
 #define EPOLL_CACHE_SIZE 10000

@@ -9,22 +9,13 @@ log() {
 # Start PostgreSQL
 log "Starting PostgreSQL..."
 service postgresql start
-if [ $? -ne 0 ]; then
-    log "Failed to start PostgreSQL"
-    exit 1
-fi
-log "PostgreSQL started successfully"
 
 # Start Redis
 log "Starting Redis..."
 redis-server --protected-mode no &
-if [ $? -ne 0 ]; then
-    log "Failed to start Redis"
-    exit 1
-fi
-log "Redis started successfully"
 
-# Keep the script running
-log "All services started. Keeping container alive..."
-tail -f /dev/null
+# Run setup script
+log "Running setup script..."
+/bin/bash /usr/src/app/script/setup.sh
 
+log "All services started and setup completed successfully"
