@@ -71,4 +71,7 @@ Enhanced Performance: Especially critical in environments like high-frequency tr
 Potential busy loop when we user-authenticate while listening for orderbook updates
 Solve - Multi-thread the authentication and orderbook updates. Authentication will assign file descriptor that orderbook will listen from
 
+
+### 6. Load balancer for Scalability
+
 Open source the project ^_^

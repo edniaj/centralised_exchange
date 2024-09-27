@@ -15,6 +15,10 @@
 #include <unordered_set> // hash table for O(1) lookup, VERIFIED client FDs
 #include <thread>
 #include <sw/redis++/redis++.h>
+#include <unordered_map>
+#include <string>
+#include <vector>
+#include <cassert>
 
 #define SERVER_PORT 8888
 #define PENDING_CONNECTION_BACKLOG 10000
@@ -80,13 +84,27 @@ namespace sys_epoll
 
 #define MAX_SENDERCOMPID 10000 // 1 million unique sendercompids, we will use this for an array. Better than hashtable
 
+
 class DatabaseManager
 {
 private:
     pqxx::connection conn;
 
 public:
-    DatabaseManager(const std::string &connString) : conn(connString) {}
+    DatabaseManager(const std::string &connString) : conn(connString) {
+        try {
+            pqxx::work txn(conn);
+            pqxx::result result = txn.exec("SELECT COUNT(*) FROM users");
+            txn.commit();
+            
+            if (!result.empty()) {
+                int userCount = result[0][0].as<int>();
+                std::cout << "\n=============================\nDatabase contains " << userCount << " user(s)." << std::endl;
+            }
+        } catch (const std::exception &e) {
+            std::cerr << "Error counting users: " << e.what() << std::endl;
+        }
+    }
 
     bool verifyUser(const std::string &username, const std::string &password)
     {
@@ -117,34 +135,65 @@ public:
 
     // You can add more methods here for other database operations
 };
-#include <unordered_map>
-#include <string>
-#include <vector>
 
-class FIXMessage {
+class RedisManager
+{
+private:
+    sw::redis::Redis redis;
 
-// Reference: https://www.fixtrading.org/online-specification/introduction/
+public:
+    RedisManager(const std::string &uri) : redis(uri) {
+        auto keys = getAllKeys();
+        if (keys.empty()) {
+            throw std::runtime_error("Redis database is empty. At least one key should exist.");
+        } else {
+            std::cout << "Redis contains " << keys.size() << " key(s).\n=============================\n" << std::endl;
+        }
+    }
+
+    std::string ping()
+    {
+        return redis.ping();
+    }
+
+    std::vector<std::string> getAllKeys()
+    {
+        std::vector<std::string> keys;
+        redis.keys("*", std::back_inserter(keys));
+        return keys;
+    }
+};
+
+class FIXMessage
+{
+
+    // Reference: https://www.fixtrading.org/online-specification/introduction/
 private:
     std::unordered_map<int, std::string> fields;
     std::vector<int> fieldOrder;
 
 public:
-    FIXMessage(const std::string& message) {
+    FIXMessage(const std::string &message)
+    {
         parse(message);
     }
 
-    void parse(const std::string& message) {
+    void parse(const std::string &message)
+    {
         size_t pos = 0;
         size_t end = message.length();
 
-        while (pos < end) {
+        while (pos < end)
+        {
             size_t equalPos = message.find('=', pos); // attempt to find '=' from pos
-            if (equalPos == std::string::npos) break; // npos represents the largest possible value for an element of type size_t, return when not found
+            if (equalPos == std::string::npos)
+                break; // npos represents the largest possible value for an element of type size_t, return when not found
 
             size_t sohPos = message.find('\x01', equalPos); // \x01 is a hexadecimal representation with val 1
-            if (sohPos == std::string::npos) sohPos = end;  // if \x01 not found, \x01 represent end of each tag. sohPos == StartOfHeadingPosition
+            if (sohPos == std::string::npos)
+                sohPos = end; // if \x01 not found, \x01 represent end of each tag. sohPos == StartOfHeadingPosition
 
-            int tag = std::stoi(message.substr(pos, equalPos - pos)); // pos to equalPos e.g. "tag"=14
+            int tag = std::stoi(message.substr(pos, equalPos - pos));                // pos to equalPos e.g. "tag"=14
             std::string value = message.substr(equalPos + 1, sohPos - equalPos - 1); // tag="14"
 
             fields[tag] = value;
@@ -154,21 +203,23 @@ public:
         }
     }
 
-    std::string getField(int tag) const {  // const is a qualifier : doesnt mess with Object state 
-        auto it = fields.find(tag); // automatic type deduction | it is iterator. iterator to a map is a pair object, first : key, second: value
+    std::string getField(int tag) const
+    {                                                  // const is a qualifier : doesnt mess with Object state
+        auto it = fields.find(tag);                    // automatic type deduction | it is iterator. iterator to a map is a pair object, first : key, second: value
         return (it != fields.end()) ? it->second : ""; // Returns iterator or "" it->second means it.second
     }
 
     // New method to print the FIXMessage contents
-    void print() const {
+    void print() const
+    {
         std::cout << "FIXMessage Contents:" << std::endl;
-        for (const auto& tag : fieldOrder) {
-            std::cout<< tag << ":" << fields.at(tag) << std::endl;
+        for (const auto &tag : fieldOrder)
+        {
+            std::cout << tag << ":" << fields.at(tag) << std::endl;
         }
     }
 
-    // Add Validation later. 
-    
+    // Add Validation later.
 };
 
 void print_success(const char *message)
@@ -177,11 +228,12 @@ void print_success(const char *message)
          << endl;
 }
 
-class TCPServer {
+class TCPServer
+{
 private:
     int server_fd;
     int epoll_fd;
-    DatabaseManager& dbManager;
+    DatabaseManager &dbManager;
     std::unordered_set<int> unorderedset_unverifiedfd;
     std::array<std::unordered_set<int>, MAX_SENDERCOMPID> array_sendercompid_verifiedfd;
 
@@ -192,11 +244,12 @@ private:
     bool set_non_blocking(int fd);
     bool handle_new_client_connection();
     bool handle_client_data(int client_fd);
-    bool verify_new_client(const std::string& username, const std::string& password);
-    
+    bool handle_order(int client_fd, FIXMessage &fixMessage);
+    bool verify_new_client(const std::string &username, const std::string &password);
+    bool handle_authentication(int client_fd, const FIXMessage &fixMessage);
 
 public:
-    TCPServer(DatabaseManager& db_manager);
+    TCPServer(DatabaseManager &db_manager);
 
     bool setup();
     void run_login();
@@ -204,7 +257,7 @@ public:
     void run();
 };
 
-TCPServer::TCPServer(DatabaseManager& db_manager) : dbManager(db_manager), server_fd(-1), epoll_fd(-1) {} // Constructor (parameter) : member initializer list {}
+TCPServer::TCPServer(DatabaseManager &db_manager) : dbManager(db_manager), server_fd(-1), epoll_fd(-1) {} // Constructor (parameter) : member initializer list {}
 
 bool TCPServer::add_socket_to_epoll(int socket_fd, uint32_t events)
 {
@@ -319,11 +372,43 @@ bool TCPServer::setup()
     return true;
 }
 
-bool TCPServer::verify_new_client(const std::string& username, const std::string& password)
+bool TCPServer::verify_new_client(const std::string &username, const std::string &password)
 {
     // Authentication logic here
     // We need to check for the username and password in the database
     return dbManager.verifyUser(username, password);
+}
+
+bool TCPServer::handle_authentication(int client_fd, const FIXMessage &fixMessage)
+{
+    std::string username = fixMessage.getField(553);
+    std::string password = fixMessage.getField(554);
+    std::string senderCompID = fixMessage.getField(49);
+
+    if (unorderedset_unverifiedfd.count(client_fd) > 0)
+        return true;
+
+    if (verify_new_client(username, password))
+    {
+        unorderedset_unverifiedfd.erase(client_fd);
+        int senderCompIDInt = std::stoi(senderCompID);
+        if (senderCompIDInt >= 0 && senderCompIDInt < MAX_SENDERCOMPID)
+        {
+            array_sendercompid_verifiedfd[senderCompIDInt].insert(client_fd);
+            std::cout << "Client verified: " << username << " (SenderCompID: " << senderCompID << ")" << std::endl;
+            return true;
+        }
+        else
+        {
+            std::cerr << "Invalid SenderCompID: " << senderCompID << std::endl;
+            return false;
+        }
+    }
+    else
+    {
+        std::cout << "Client verification failed for: " << username << std::endl;
+        return false;
+    }
 }
 
 bool TCPServer::handle_new_client_connection()
@@ -359,7 +444,7 @@ bool TCPServer::handle_new_client_connection()
 
 bool TCPServer::handle_client_data(int client_fd)
 {
-    const int BUFFER_SIZE = 1024*16;
+    const int BUFFER_SIZE = 1024 * 16;     // 16kb buffer
     std::vector<char> buffer(BUFFER_SIZE); // dynamically sized array, handle malloc dealloc
     ssize_t bytes_received;
 
@@ -369,39 +454,26 @@ bool TCPServer::handle_client_data(int client_fd)
         cout << "bytes received: " << bytes_received << endl;
         if (bytes_received > 0)
         {
-            buffer[bytes_received] = '\0';  // Null-terminate the received data
-            std::string received_data(buffer.data(), bytes_received);  // Convert to std::string so that we can manipulate easier
+            buffer[bytes_received] = '\0';                            // Null-terminate the received data
+            std::string received_data(buffer.data(), bytes_received); // Convert to std::string so that we can manipulate easier
 
             FIXMessage fixMessage(received_data);
             fixMessage.print();
-            
-            if (unorderedset_unverifiedfd.count(client_fd) > 0)
-            {
-                std::string username = fixMessage.getField(553);
-                std::string password = fixMessage.getField(554);
 
-                if (verify_new_client(username, password))
-                {
-                    unorderedset_unverifiedfd.erase(client_fd);
+            // We need to look at msgtype (field 35 first, some methods might not need login)
+            char msgType = fixMessage.getField(35)[0]; // msgtype will always be 1 char
 
-                    // TODO: Get the sendercompid from the buffer
-                    int sendercompid = 1; // This should be extracted from the buffer
-                    array_sendercompid_verifiedfd[sendercompid].insert(client_fd);
-                    
-                    std::cout << "Client verified: " << username << std::endl;
-                }
-                else
-                {
-                    std::cout << "Client verification failed for: " << username << std::endl;
-                    return false;
-                }
-            }
-            else
+            switch (msgType)
             {
-                // Client is already verified, process the data normally
-                cout << "Received " << bytes_received << " bytes: " << received_data << endl;
+            case 'A':
+                return handle_authentication(client_fd, fixMessage);
+            case 'D':
+                return handle_order(client_fd, fixMessage);
+            default:
+                // Handle other message types or unknown types
+                std::cout << "Unhandled message type: " << msgType << std::endl;
+                return true;
             }
-            return true;
         }
         else if (bytes_received == 0)
         {
@@ -412,8 +484,8 @@ bool TCPServer::handle_client_data(int client_fd)
         {
             if (errno == EAGAIN || errno == EWOULDBLOCK)
             {
-                // No more data to read, continue the loop
-                continue;
+                // No more data to read, exit the loop
+                break;
             }
             else
             {
@@ -422,6 +494,13 @@ bool TCPServer::handle_client_data(int client_fd)
             }
         }
     }
+    return true;
+}
+
+bool TCPServer::handle_order(int client_fd, FIXMessage &fixMessage)
+{
+    // Implement order handling logic here
+    return true;
 }
 
 void TCPServer::run_login()
@@ -478,12 +557,13 @@ void TCPServer::run_login()
     }
 }
 
-void TCPServer::run_orderbook() 
+void TCPServer::run_orderbook()
 {
-    cout<<"running orderbook"<<endl;
+    cout << "running orderbook" << endl;
 }
 
-void TCPServer::run() {
+void TCPServer::run()
+{
     std::thread login_thread(&TCPServer::run_login, this);
     std::thread orderbook_thread(&TCPServer::run_orderbook, this);
 
@@ -495,9 +575,13 @@ int main()
 {
     // Used for verification
     DatabaseManager dbManager("dbname=docker user=docker password=docker host=localhost");
+    // Instantiate RedisManager
+    RedisManager redisManager("tcp://127.0.0.1:6379");
+    
     TCPServer server(dbManager);
 
-    if (!server.setup()) {
+    if (!server.setup())
+    {
         return -1;
     }
 
