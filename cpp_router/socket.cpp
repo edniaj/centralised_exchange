@@ -12,7 +12,6 @@
 #include <signal.h> // used to gracefully terminate client terminal
 #include <pqxx/pqxx>
 #include <array>
-#include <unordered_set> // hash table for O(1) lookup, VERIFIED client FDs
 #include <thread>
 #include <sw/redis++/redis++.h>
 #include <unordered_map>
@@ -47,6 +46,7 @@ namespace sys_socket
     using ::recv;
     using ::setsockopt;
     using ::socket;
+    using ::send;
 }
 namespace sys_epoll
 {
@@ -84,24 +84,28 @@ namespace sys_epoll
 
 #define MAX_SENDERCOMPID 10000 // 1 million unique sendercompids, we will use this for an array. Better than hashtable
 
-
 class DatabaseManager
 {
 private:
     pqxx::connection conn;
 
 public:
-    DatabaseManager(const std::string &connString) : conn(connString) {
-        try {
+    DatabaseManager(const std::string &connString) : conn(connString)
+    {
+        try
+        {
             pqxx::work txn(conn);
             pqxx::result result = txn.exec("SELECT COUNT(*) FROM users");
             txn.commit();
-            
-            if (!result.empty()) {
+
+            if (!result.empty())
+            {
                 int userCount = result[0][0].as<int>();
                 std::cout << "\n=============================\nDatabase contains " << userCount << " user(s)." << std::endl;
             }
-        } catch (const std::exception &e) {
+        }
+        catch (const std::exception &e)
+        {
             std::cerr << "Error counting users: " << e.what() << std::endl;
         }
     }
@@ -133,6 +137,29 @@ public:
         }
     }
 
+    std::string getUserSenderCompId(const std::string &username)
+    {
+        try
+        {
+            pqxx::work txn(conn);
+            pqxx::result result = txn.exec(
+                "SELECT sendercompid FROM users WHERE username = " + txn.quote(username));
+
+            if (result.empty())
+            {
+                return ""; // User not found, return empty string
+            }
+
+            txn.commit();
+            return result[0][0].as<std::string>();
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "Error fetching user sendercompid: " << e.what() << std::endl;
+            return ""; // Return empty string on error
+        }
+    }
+
     // You can add more methods here for other database operations
 };
 
@@ -142,12 +169,17 @@ private:
     sw::redis::Redis redis;
 
 public:
-    RedisManager(const std::string &uri) : redis(uri) {
+    RedisManager(const std::string &uri) : redis(uri)
+    {
         auto keys = getAllKeys();
-        if (keys.empty()) {
+        if (keys.empty())
+        {
             throw std::runtime_error("Redis database is empty. At least one key should exist.");
-        } else {
-            std::cout << "Redis contains " << keys.size() << " key(s).\n=============================\n" << std::endl;
+        }
+        else
+        {
+            std::cout << "Redis contains " << keys.size() << " key(s).\n=============================\n"
+                      << std::endl;
         }
     }
 
@@ -173,7 +205,7 @@ private:
     std::vector<int> fieldOrder;
 
 public:
-    FIXMessage(const std::string &message)
+    FIXMessage(const std::string &message) // Message received must be in a FIX format
     {
         parse(message);
     }
@@ -220,6 +252,62 @@ public:
     }
 
     // Add Validation later.
+
+    // Static method to create a logon response
+    static std::string createLogonResponse(const std::string &senderCompId, const std::string &targetCompId)
+    {
+        std::string logonResponse;
+
+        // Begin String
+        logonResponse += "8=FIX.4.2\x01";
+
+        // Body Length (placeholder, to be calculated later)
+        logonResponse += "9=000000\x01";
+
+        // Message Type (A = Logon)
+        logonResponse += "35=A\x01";
+
+        // SenderCompID
+        logonResponse += "49=" + senderCompId + "\x01";
+
+        // TargetCompID
+        logonResponse += "56=" + targetCompId + "\x01";
+
+        // Message Sequence Number (hardcoded to 1 for this example)
+        logonResponse += "34=1\x01";
+
+        // SendingTime (current time in UTC)
+        auto now = std::chrono::system_clock::now();
+        auto now_c = std::chrono::system_clock::to_time_t(now);
+        std::tm *now_tm = std::gmtime(&now_c);
+        char timeStr[21];
+        std::strftime(timeStr, sizeof(timeStr), "%Y%m%d-%H:%M:%S", now_tm);
+        logonResponse += "52=" + std::string(timeStr) + "\x01";
+
+        // EncryptMethod (0 = None/Other)
+        logonResponse += "98=0\x01";
+
+        // HeartBtInt (heartbeat interval in seconds, set to 30 for this example)
+        logonResponse += "108=30\x01";
+
+        // Calculate and insert the body length
+        int bodyLength = logonResponse.length() - 20; // Subtract 20 for the length of tags 8 and 9
+        std::string bodyLengthStr = std::to_string(bodyLength);
+        logonResponse.replace(logonResponse.find("9=000000") + 2, 6, bodyLengthStr);
+
+        // Calculate and append the CheckSum
+        int checkSum = 0;
+        for (char c : logonResponse)
+        {
+            checkSum += static_cast<unsigned char>(c);
+        }
+        checkSum %= 256;
+        char checkSumStr[4];
+        std::snprintf(checkSumStr, sizeof(checkSumStr), "%03d", checkSum);
+        logonResponse += "10=" + std::string(checkSumStr) + "\x01";
+
+        return logonResponse;
+    }
 };
 
 void print_success(const char *message)
@@ -234,7 +322,6 @@ private:
     int server_fd;
     int epoll_fd;
     DatabaseManager &dbManager;
-    std::unordered_set<int> unorderedset_unverifiedfd;
     std::array<std::unordered_set<int>, MAX_SENDERCOMPID> array_sendercompid_verifiedfd;
 
     // Private methods (implementation details)
@@ -245,8 +332,8 @@ private:
     bool handle_new_client_connection();
     bool handle_client_data(int client_fd);
     bool handle_order(int client_fd, FIXMessage &fixMessage);
-    bool verify_new_client(const std::string &username, const std::string &password);
-    bool handle_authentication(int client_fd, const FIXMessage &fixMessage);
+    bool verify_credential(int client_fd, const FIXMessage &fixMessage);
+    bool receive_fix_message(int client_fd, std::string &received_data);
 
 public:
     TCPServer(DatabaseManager &db_manager);
@@ -255,6 +342,9 @@ public:
     void run_login();
     void run_orderbook();
     void run();
+    bool sendToClient(int client_fd, const std::string &message);
+    bool handle_negative_client_fd(int client_fd);
+    int close_client_fd(int client_fd, const char *message);
 };
 
 TCPServer::TCPServer(DatabaseManager &db_manager) : dbManager(db_manager), server_fd(-1), epoll_fd(-1) {} // Constructor (parameter) : member initializer list {}
@@ -273,7 +363,8 @@ bool TCPServer::add_socket_to_epoll(int socket_fd, uint32_t events)
     struct epoll_event event;
     event.events = events;
     event.data.fd = socket_fd;
-
+    if (set_non_blocking(socket_fd) == false)
+        return false;
     if (sys_epoll::epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_fd, &event) == -1)
     {
         cerr << "Failed to add socket to epoll" << endl;
@@ -281,7 +372,40 @@ bool TCPServer::add_socket_to_epoll(int socket_fd, uint32_t events)
     }
     return true;
 }
+bool TCPServer::sendToClient(int client_fd, const std::string &message)
+{
+    ssize_t total_sent = 0;
+    ssize_t message_length = message.length();
+    const char *buffer = message.c_str();
 
+    while (total_sent < message_length)
+    {
+        ssize_t sent = send(client_fd, buffer + total_sent, message_length - total_sent, 0);
+        if (sent == -1)
+        {
+            if (errno == EINTR)
+            {
+                // Interrupted by signal, retry
+                continue;
+            }
+            else if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                // Socket buffer is full, wait and retry
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+            else
+            {
+                // Unrecoverable error
+                std::cerr << "Error sending message to client: " << strerror(errno) << std::endl;
+                return false;
+            }
+        }
+        total_sent += sent;
+    }
+
+    return true;
+}
 bool TCPServer::remove_socket_from_epoll(int socket_fd)
 {
     return epoll_ctl(epoll_fd, EPOLL_CTL_DEL, socket_fd, nullptr) != -1;
@@ -372,74 +496,78 @@ bool TCPServer::setup()
     return true;
 }
 
-bool TCPServer::verify_new_client(const std::string &username, const std::string &password)
-{
-    // Authentication logic here
-    // We need to check for the username and password in the database
-    return dbManager.verifyUser(username, password);
-}
-
-bool TCPServer::handle_authentication(int client_fd, const FIXMessage &fixMessage)
+bool TCPServer::verify_credential(int client_fd, const FIXMessage &fixMessage)
 {
     std::string username = fixMessage.getField(553);
     std::string password = fixMessage.getField(554);
-    std::string senderCompID = fixMessage.getField(49);
 
-    if (unorderedset_unverifiedfd.count(client_fd) > 0)
-        return true;
+    return dbManager.verifyUser(username, password);
+}
 
-    if (verify_new_client(username, password))
-    {
-        unorderedset_unverifiedfd.erase(client_fd);
-        int senderCompIDInt = std::stoi(senderCompID);
-        if (senderCompIDInt >= 0 && senderCompIDInt < MAX_SENDERCOMPID)
-        {
-            array_sendercompid_verifiedfd[senderCompIDInt].insert(client_fd);
-            std::cout << "Client verified: " << username << " (SenderCompID: " << senderCompID << ")" << std::endl;
-            return true;
+bool TCPServer::handle_negative_client_fd(int client_fd)
+{
+    // No incoming connection, and since we are non-blocking, this is expected.
+    // We simply return and the main loop will call this function again when epoll signals a new event.
+    // errno is a global variable that is set by the system call that failed.
+    if (errno == EAGAIN || errno == EWOULDBLOCK){
+        return true; // No new client connection, nothing to do.
         }
-        else
-        {
-            std::cerr << "Invalid SenderCompID: " << senderCompID << std::endl;
-            return false;
-        }
-    }
-    else
-    {
-        std::cout << "Client verification failed for: " << username << std::endl;
-        return false;
-    }
+
+    return false; // Return false to indicate failure
+}
+
+int TCPServer::close_client_fd(int client_fd, const char *message)
+{
+    std::cout << message << std::endl;
+    sys_socket::close(client_fd);
+    return 0;
 }
 
 bool TCPServer::handle_new_client_connection()
 {
-    int client_fd = sys_socket::accept(server_fd, nullptr, nullptr);
-    while (client_fd > 0)
+    int new_client_fd;
+    int max_loop = 10000; // NASA STYLE MAX LOOP, we want to avoid infinite loop. Log error if it happens
+
+    // Next time, we will use a loadbalancer to issue the targetCompID
+    std::string targetCompID = "SERVER_ASIA_01";
+    cout << "handling new client connection" << endl;
+
+    do
     {
-        if ((set_non_blocking(client_fd) && add_socket_to_epoll(client_fd, EPOLLIN | EPOLLET)) == false)
-            return false;
+        // Accept the next client FD
+        new_client_fd = sys_socket::accept(server_fd, nullptr, nullptr); // less than 0 if no new client
+        cout << "accepted new client fd :" << new_client_fd << endl;
+        if (new_client_fd < 0)                                           // new_client_fd < 0 means no new client or possible error
+            return handle_negative_client_fd(new_client_fd);
 
-        // If we successfully accepted a connection, handle the new client
-        unorderedset_unverifiedfd.insert(client_fd);
-        print_success("Accepted a new connection");
-        client_fd = sys_socket::accept(server_fd, nullptr, nullptr); // less than 0 if no new client
-    }
+        // Handle Authentication | Parse the message
+        cout << "receiving data" << endl;
+        std::string received_data;
+        if (!receive_fix_message(new_client_fd, received_data))
+            return close_client_fd(new_client_fd, "Failed to receive FIX message. Closing connection.");
+        cout << "Received data: " << received_data << endl;
+        // Handle Authentication | Authenticate using fixMessage
+        FIXMessage fixMessage(received_data);
 
-    if (client_fd < 0)
-    {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-        {
-            // No incoming connection, and since we are non-blocking, this is expected.
-            // We simply return and the main loop will call this function again when epoll signals a new event.
-            return true; // No new client connection, nothing to do.
-        }
-        else
-        {
-            return false; // Return false to indicate failure
-        }
-    }
+        if (!verify_credential(new_client_fd, fixMessage))
+            return close_client_fd(new_client_fd, "Failed to verify credentials");
 
-    return true;
+        // Add new socket connection to epoll
+        if (!add_socket_to_epoll(new_client_fd, EPOLLIN | EPOLLET))
+            return close_client_fd(new_client_fd, "Failed to set non blocking and add to epoll");
+
+        // We need to get the senderCompID from the database
+        std::string senderCompID = dbManager.getUserSenderCompId(fixMessage.getField(553));
+
+        // Send logon response
+        std::string stringFixMessage = FIXMessage::createLogonResponse(targetCompID, senderCompID);
+        if (!sendToClient(new_client_fd, stringFixMessage))
+            return close_client_fd(new_client_fd, "Failed to send logon response");
+
+        max_loop--;
+    } while (max_loop > 0);
+
+        return handle_negative_client_fd(new_client_fd); // Unwanted error == false, no new client == true
 }
 
 bool TCPServer::handle_client_data(int client_fd)
@@ -466,7 +594,7 @@ bool TCPServer::handle_client_data(int client_fd)
             switch (msgType)
             {
             case 'A':
-                return handle_authentication(client_fd, fixMessage);
+                return verify_credential(client_fd, fixMessage);
             case 'D':
                 return handle_order(client_fd, fixMessage);
             default:
@@ -547,7 +675,6 @@ void TCPServer::run_login()
                         continue;
                     }
 
-                    unorderedset_unverifiedfd.erase(client_fd); // just in case
                     sys_socket::close(client_fd);
                     cout << "Closed socket " << client_fd << endl;
                 }
@@ -571,13 +698,46 @@ void TCPServer::run()
     orderbook_thread.join();
 }
 
+bool TCPServer::receive_fix_message(int client_fd, std::string &received_data)
+{
+    const int BUFFER_SIZE = 1024 * 16; // 16kb buffer
+    std::vector<char> buffer(BUFFER_SIZE);
+    ssize_t bytes_received;
+
+    received_data.clear();
+
+    while (true)
+    {
+        bytes_received = sys_socket::recv(client_fd, buffer.data(), buffer.size(), 0);
+        if (bytes_received > 0)
+        {
+            received_data.append(buffer.data(), bytes_received);
+            if (received_data.find("\x01") != std::string::npos) // FIX messages end with SOH character
+            {
+                return true;
+            }
+        }
+        else if (bytes_received == 0 || (bytes_received < 0 && errno != EAGAIN && errno != EWOULDBLOCK))
+        {
+            return false;
+        }
+        else
+        {
+            break; // No more data to read for now
+        }
+    }
+
+    return !received_data.empty();
+}
+
 int main()
 {
+
     // Used for verification
     DatabaseManager dbManager("dbname=docker user=docker password=docker host=localhost");
     // Instantiate RedisManager
     RedisManager redisManager("tcp://127.0.0.1:6379");
-    
+
     TCPServer server(dbManager);
 
     if (!server.setup())
@@ -588,4 +748,27 @@ int main()
     server.run();
 
     return 0;
-}  
+}
+
+/*
+ * CRITICAL ISSUES:
+ *
+ * 1. EPOLL Timestamp Queue:
+ *    The current implementation of EPOLL does not put edited file descriptors
+ *    into a queue system based on timestamp. This can lead to potential issues
+ *    with handling events in the order they occurred, especially in high-load
+ *    scenarios. Implementing a timestamp-based queue for EPOLL events would
+ *    ensure that we process events in the correct order and prevent any
+ *    race conditions or out-of-order processing.
+ *
+ * 2. Separate EPOLLs for Login and Orderbook:
+ *    Currently, we are using a single EPOLL instance for both login and
+ *    orderbook operations. This design can lead to performance bottlenecks
+ *    and make it difficult to manage different types of events efficiently.
+ *    We should implement two separate EPOLL instances:
+ *    - One for handling login-related events
+ *    - Another for managing orderbook-related events
+ *    This separation would allow for better scalability, improved performance,
+ *    and easier management of different types of operations within the system.
+ */
+

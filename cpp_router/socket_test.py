@@ -6,9 +6,7 @@ def send_logon(host, port, username, password, retries=5):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((host, port))
-
-            # time.sleep(3)
-            
+            time.sleep(5)
             # Send Logon message
             logon_message = (
                 "8=FIX.4.2\x01"  # BeginString
@@ -38,7 +36,10 @@ def send_logon(host, port, username, password, retries=5):
             
             # Wait for logon response
             response = s.recv(1024).decode()
-            print(f"Received: {response}")
+            print(f"Received FIX message: {response}")
+            
+            # Parse and print the received FIX message
+            parse_fix_message(response)
             
             # Check if logon was successful
             if "35=A" not in response:
@@ -49,7 +50,6 @@ def send_logon(host, port, username, password, retries=5):
             
             # If authentication successful, proceed with sending other messages
             for i in range(retries):
-                # Your existing FIX message code here
                 print(f"Sending message {i+1}/{retries}")
                 # Placeholder for future implementation
                 time.sleep(1)  # Add a small delay between messages
@@ -58,8 +58,14 @@ def send_logon(host, port, username, password, retries=5):
     except socket.error as e:
         print(f"Socket error: {e}")
         return False
-    finally:
-        s.close()
+
+def parse_fix_message(message):
+    fields = message.split("\x01")
+    print("Parsed FIX message:")
+    for field in fields:
+        if "=" in field:
+            tag, value = field.split("=", 1)
+            print(f"  Tag {tag}: {value}")
 
 # Usage
 if __name__ == "__main__":

@@ -75,7 +75,8 @@
         "numeric": "cpp",
         "queue": "cpp",
         "random": "cpp",
-        "variant": "cpp"
+        "variant": "cpp",
+        "thread": "cpp"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }
