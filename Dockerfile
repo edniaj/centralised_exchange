@@ -26,6 +26,8 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y \
     libhiredis-dev \
     && apt-get clean
 
+
+#installs redis and libpqxx-dev
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common && \
     DEBIAN_FRONTEND=noninteractive add-apt-repository ppa:redislabs/redis && \
@@ -43,6 +45,12 @@ RUN git clone https://github.com/sewenew/redis-plus-plus.git && \
     cd ../.. && \
     rm -rf redis-plus-plus
 
+
+# Install curl and Node.js
+RUN apt-get update && apt-get install -y curl
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+RUN apt-get install -y nodejs
+
 # Set the working directory inside the container
 WORKDIR /usr/src/app
 
@@ -51,6 +59,8 @@ COPY . .
 
 # Install required Python packages (e.g., redis-py and psycopg2 for PostgreSQL)
 RUN pip3 install --no-cache-dir redis psycopg2-binary bcrypt
+# Install python-dotenv
+RUN pip3 install --no-cache-dir python-dotenv
 
 # Expose Redis and PostgreSQL ports
 EXPOSE 6379 5432

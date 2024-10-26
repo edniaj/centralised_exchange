@@ -18,6 +18,8 @@
 #include <string>
 #include <vector>
 #include <cassert>
+#include <iomanip>
+#include <chrono>
 
 #define SERVER_PORT 8888
 #define PENDING_CONNECTION_BACKLOG 10000
@@ -530,27 +532,36 @@ bool TCPServer::handle_new_client_connection()
 
     // Next time, we will use a loadbalancer to issue the targetCompID
     std::string targetCompID = "SERVER_ASIA_01";
-    cout << "handling new client connection" << endl;
+
+
+   // Local debug print function
+    auto debug_print = [max_loop](const std::string& message) {
+        std::cout << "max_loop : " << max_loop <<endl;
+        auto now = std::chrono::system_clock::now();
+        auto now_c = std::chrono::system_clock::to_time_t(now);
+        std::cout << "Debug [" << std::put_time(std::localtime(&now_c), "%Y-%m-%d %H:%M:%S") << "]: " << message << std::endl;
+    };
 
     do
     {
         // Accept the next client FD
         new_client_fd = sys_socket::accept(server_fd, nullptr, nullptr); // less than 0 if no new client
-        cout << "accepted new client fd :" << new_client_fd << endl;
         if (new_client_fd < 0)                                           // new_client_fd < 0 means no new client or possible error
             return handle_negative_client_fd(new_client_fd);
 
         // Handle Authentication | Parse the message
-        cout << "receiving data" << endl;
+        
         std::string received_data;
         if (!receive_fix_message(new_client_fd, received_data))
             return close_client_fd(new_client_fd, "Failed to receive FIX message. Closing connection.");
-        cout << "Received data: " << received_data << endl;
+
+        // debug_print("Received data: " + received_data);
         // Handle Authentication | Authenticate using fixMessage
         FIXMessage fixMessage(received_data);
 
         if (!verify_credential(new_client_fd, fixMessage))
             return close_client_fd(new_client_fd, "Failed to verify credentials");
+        // debug_print("Verified credentials");
 
         // Add new socket connection to epoll
         if (!add_socket_to_epoll(new_client_fd, EPOLLIN | EPOLLET))
@@ -638,7 +649,7 @@ void TCPServer::run_login()
     {
         cout << "Waiting for events in EPOLL" << endl;
         struct epoll_event events[EPOLL_CACHE_SIZE];
-        // no. file descriptors =  int epoll_wait(int epoll_fd, struct epoll_event *events, int maxevents, int timeout);
+        // no. file descriptors =  int epoll_wait(®int epoll_fd, struct epoll_event *events, int maxevents, int timeout);
         int nfds = epoll_wait(epoll_fd, events, EPOLL_CACHE_SIZE, -1);
 
         if (nfds < 0)

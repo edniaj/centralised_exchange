@@ -1,12 +1,16 @@
 import socket
 import time
 import sys
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from dev.env
+load_dotenv('../dev.env')
 
 def send_logon(host, port, username, password, retries=5):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((host, port))
-            time.sleep(5)
             # Send Logon message
             logon_message = (
                 "8=FIX.4.2\x01"  # BeginString
@@ -48,11 +52,11 @@ def send_logon(host, port, username, password, retries=5):
             
             print("Authentication successful")
             
-            # If authentication successful, proceed with sending other messages
-            for i in range(retries):
-                print(f"Sending message {i+1}/{retries}")
-                # Placeholder for future implementation
-                time.sleep(1)  # Add a small delay between messages
+            # # If authentication successful, proceed with sending other messages
+            # for i in range(retries):
+            #     print(f"Sending message {i+1}/{retries}")
+            #     # Placeholder for future implementation
+            #     time.sleep(1)  # Add a small delay between messages
             
             return True
     except socket.error as e:
@@ -69,7 +73,12 @@ def parse_fix_message(message):
 
 # Usage
 if __name__ == "__main__":
-    result = send_logon('127.0.0.1', 8888, 'admin', 'password')
+    host = os.getenv('HOST')
+    port = int(os.getenv('PORT'))
+    username = os.getenv('USERNAME')
+    password = os.getenv('PASSWORD')
+
+    result = send_logon(host, port, username, password)
     if result:
         print("Logon process completed successfully")
     else:
