@@ -531,7 +531,7 @@ bool TCPServer::handle_new_client_connection()
     int max_loop = 10000; // NASA STYLE MAX LOOP, we want to avoid infinite loop. Log error if it happens
 
     // Next time, we will use a loadbalancer to issue the targetCompID
-    std::string targetCompID = "SERVER_ASIA_01";
+    std::string serverSenderCompID = "SERVER_ASIA_01";
 
 
    // Local debug print function
@@ -568,10 +568,10 @@ bool TCPServer::handle_new_client_connection()
             return close_client_fd(new_client_fd, "Failed to set non blocking and add to epoll");
 
         // We need to get the senderCompID from the database
-        std::string senderCompID = dbManager.getUserSenderCompId(fixMessage.getField(553));
+        std::string clientSenderCompID = dbManager.getUserSenderCompId(fixMessage.getField(553));
 
         // Send logon response
-        std::string stringFixMessage = FIXMessage::createLogonResponse(targetCompID, senderCompID);
+        std::string stringFixMessage = FIXMessage::createLogonResponse(clientSenderCompID, serverSenderCompID);
         if (!sendToClient(new_client_fd, stringFixMessage))
             return close_client_fd(new_client_fd, "Failed to send logon response");
 
