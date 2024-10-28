@@ -1,3 +1,4 @@
+// RedisManager.h
 #ifndef REDIS_MANAGER_H
 #define REDIS_MANAGER_H
 
@@ -16,8 +17,7 @@ public:
     std::vector<std::string> getAllKeys();
 
     // Add any other public methods that are implemented in RedisManager.cpp
-
-    // If there are any private methods or members, declare them here
+    
 };
 
 #endif // REDIS_MANAGER_H

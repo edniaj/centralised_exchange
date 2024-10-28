@@ -1,7 +1,9 @@
+// SocketManager.h
 #pragma once
 
 #include <string>
 #include <cstdint>
+
 
 class SocketManager {
 private:

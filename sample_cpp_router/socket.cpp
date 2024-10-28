@@ -524,7 +524,7 @@ int TCPServer::close_client_fd(int client_fd, const char *message)
     return 0;
 }
 
-bool TCPServer::whandle_new_client_connection()
+bool TCPServer::handle_new_client_connection()
 {
     int new_client_fd;
     int max_loop = 10000; // NASA STYLE MAX LOOP, we want to avoid infinite loop. Log error if it happens
