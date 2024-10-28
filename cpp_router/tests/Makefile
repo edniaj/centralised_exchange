@@ -4,26 +4,29 @@ CC=g++ -std=c++17
 # Directories
 INCLUDE_DIR=../include
 SOURCE_DIR=../source
+TEST_DIR=.
 
 # Output executable
-TARGET=test_database
+TARGET=unit_tests
 
 # Source files
-TEST_SOURCE=TestDatabaseManager.cpp
-DB_SOURCE=$(SOURCE_DIR)/DatabaseManager.cpp
+TEST_SOURCES=$(TEST_DIR)/UnitTesting.cpp \
+             $(TEST_DIR)/TestDatabaseManager.cpp
+
+SOURCE_FILES=$(SOURCE_DIR)/DatabaseManager.cpp
 
 # Include paths
-INCLUDES=-I$(INCLUDE_DIR)
+INCLUDES=-I$(INCLUDE_DIR) -I/usr/include/postgresql
 
 # Libraries to link
-LIBS=-lpqxx
+LIBS=-lpqxx -lpq -lredis++ -lhiredis
 
 # Compilation flags
 CFLAGS=-Wall -Wextra
 
 # Rule to build the executable
-$(TARGET): $(TEST_SOURCE) $(DB_SOURCE)
-	$(CC) $(CFLAGS) $(INCLUDES) $(TEST_SOURCE) $(DB_SOURCE) -o $(TARGET) $(LIBS)
+$(TARGET): $(TEST_SOURCES) $(SOURCE_FILES)
+	$(CC) $(CFLAGS) $(INCLUDES) $(TEST_SOURCES) $(SOURCE_FILES) -o $(TARGET) $(LIBS)
 
 # Clean rule
 clean:
@@ -32,3 +35,7 @@ clean:
 # Run rule
 run: $(TARGET)
 	./$(TARGET)
+
+# Debug build
+debug: CFLAGS += -g -DDEBUG
+debug: $(TARGET)
