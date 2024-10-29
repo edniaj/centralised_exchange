@@ -32,3 +32,12 @@ We do not want to resolve the trade directly on redis because theres too much ov
 ## INCORRECT (What we want to avoid):
 [Client A] AAPL Order ----→ [Matching Engine 1] (Processing AAPL)
 [ClientX B] AAPL Order ----→ [Matching Engine 2] (Also Processing AAPL) ❌ Race condition because Matching Engine doesn't know about other MEs and the trades are resolved locally.
+
+
+### Serialization / Deserialization:
+THERE IS NO NEED FOR ULTRA OPTIMIZATION HERE. WE WANT THIS TO BE READABLE AND MAINTAINABLE.
+AS LONG AS WE CAN FINISH WRITING AND EXECUTE THE PIPELINE IN A REASONABLE TIME.
+We use Redis because we want to write fast and make it less expensive. Memory > STORAGE
+
+### Scaling more token options
+Redis by default have 16 databases that can be edited in the edis.conf:

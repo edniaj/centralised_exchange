@@ -1,10 +1,9 @@
 Redis architecture
 
 Purpose
-AAPL:buy:* (hash - Price_tick: {total_quantity, order_count})-> To quickly update frontend about Price Tick + Quantity
-AAPL:sell:* (hash)-> To quickly update frontend about Price Tick + Quantity
+AAPL:orders:* (hash - order_id: {user_id, side, price, quantity, timestamp, status}) -> To retrieve order details
+user:user0001:* ({order_id1, order_id2, order_id3 ...}) -> To quickly update user about his orders 
 
-AAPL:user:user0001:* (set) -> To quickly update user about his orders 
 
 Market order
 35=D (New Order Single)

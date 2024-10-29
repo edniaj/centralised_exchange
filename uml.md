@@ -16,7 +16,7 @@
 
 ### Order
 - **Purpose**: Represents an individual order in the system.
-- **Attributes**: order_id, user_id, side, price, quantity, timestamp, status
+- **Attributes**: order_id, user_id, side, price, quantity, timestamp
 
 ### PriceLevelInfo
 - **Purpose**: Stores aggregated information for a specific price level.

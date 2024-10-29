@@ -11,9 +11,11 @@ TARGET=unit_tests
 
 # Source files
 TEST_SOURCES=$(TEST_DIR)/UnitTesting.cpp \
-             $(TEST_DIR)/TestDatabaseManager.cpp
+             $(TEST_DIR)/TestDatabaseManager.cpp \
+             $(TEST_DIR)/TestRedisManager.cpp
 
-SOURCE_FILES=$(SOURCE_DIR)/DatabaseManager.cpp
+SOURCE_FILES=$(SOURCE_DIR)/DatabaseManager.cpp \
+            $(SOURCE_DIR)/RedisManager.cpp
 
 # Include paths
 INCLUDES=-I$(INCLUDE_DIR) -I/usr/include/postgresql

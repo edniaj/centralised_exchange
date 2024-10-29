@@ -1,12 +1,20 @@
 #include <iostream>
-#include "TestDatabaseManager.h"
+#include "../include/TestDatabaseManager.h"
+#include "../include/TestRedisManager.h"
 
 int main() {
-    std::cout << "Starting database tests..." << std::endl;
-    
     try {
-        TestDatabaseManager tester;
-        tester.runAllTests();
+        // Database Tests
+        std::cout << "\n=== Starting Database Tests ===\n" << std::endl;
+        TestDatabaseManager dbTester;
+        dbTester.runAllTests();
+
+        // Redis Tests
+        std::cout << "\n=== Starting Redis Tests ===\n" << std::endl;
+        TestRedisManager redisTester;
+        redisTester.runAllTests();
+
+        std::cout << "\n=== All Tests Complete ===\n" << std::endl;
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "Test failed with error: " << e.what() << std::endl;

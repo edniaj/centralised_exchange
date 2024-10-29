@@ -4,17 +4,20 @@ g++ socket.cpp -o socket.exe | ./socket.exe
 docker exec -it cpp_router /bin/bash
 
 ## todo
-1. Login Frontend
-2. NEXTjs endpoint connects to exchange router 
-Stream data instead of doing a get req (Redis) into the frontend - FAST (fix adapted for streaming protocol)
-stream data using kafka message queue into frontend ? look into it
-Copy FTX UI and finish up i guess
+
+
 
 ### todo but later, not important
-Create liquidation engine - redis is single thread os it can be handled in the routes. But what if we are using multiple redis db to handle the orderbook ?
 
-Fix protocol upgrade Validation
-implement edge-triggered over level-triggered
+Liquidation engine - ONLY FOR FUTURES. WE WILL NOT BE DOING THIS FOR NOW. JUST SPOT TRADING
+
+Streaming data to users - Regular Industrial MM
+
+Frontend for retail - USING NAT instead of RABBITMQ to stream data ?
+
+More efficient Encoder/Decoder - Process message faster
+
+Kernel bypass - on the server side. Lower latency in processing (DPDK/ SOLARFLARE might be preferable) - instead of copying to the kernel space, we access it directly in the user space (important!). I think it will be ideal if we implement this from FIXGATEWAY -> Matching engine since fixgateway and matching engine wont be built on the same cloud instance
 
 ## After establishing benchmarking testcases
 
@@ -22,7 +25,7 @@ implement edge-triggered over level-triggered
 
 ### 2. Robust session management (Advanced Message Queueing protocol for better scalability ? not sure )
 
-### 3. Kernel bypass on the server side. Lower latency in processing (DPDK/ SOLARFLARE might be preferable) - instead of copying to the kernel space, we access it directly in the user space (important!)
+### 3. 
 Traditional Flow:
 
 
