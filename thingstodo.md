@@ -19,6 +19,8 @@ More efficient Encoder/Decoder - Process message faster
 
 Kernel bypass - on the server side. Lower latency in processing (DPDK/ SOLARFLARE might be preferable) - instead of copying to the kernel space, we access it directly in the user space (important!). I think it will be ideal if we implement this from FIXGATEWAY -> Matching engine since fixgateway and matching engine wont be built on the same cloud instance
 
+FAULT TOLERANCE - WAL (write ahead log) for postgresql
+
 ## After establishing benchmarking testcases
 
 ### 1. More Efficient Encoding format - reduce overhead == reduce latency ^_^ (maybe custom serializer -deserializer since varying field format, this makes it even faster ) , ++ points for self-made optimization

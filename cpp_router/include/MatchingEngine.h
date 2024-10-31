@@ -8,6 +8,8 @@
 #include <set>
 #include "FixMessage.h"
 #include "RedisManager.h"
+#include "DatabaseManager.h"
+#include "SocketManager.h"
 
 class MatchingEngine {
 private:
@@ -15,7 +17,9 @@ private:
     std::string engine_id;
     std::set<std::string> assigned_symbols;
     RedisManager& redisManager;
-
+    DatabaseManager& dbManager;
+    SocketManager& socketManager;
+    
     struct Order {
         std::string orderId;
         std::string symbol;

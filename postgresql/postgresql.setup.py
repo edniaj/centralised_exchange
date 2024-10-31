@@ -1,60 +1,124 @@
-import psycopg2 #PostgreSQL database adapter 
-from psycopg2 import sql
+'''
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password VARCHAR(100) NOT NULL,
+    sendercompid INTEGER UNIQUE NOT NULL,
+    created_at TIMESTAMP NOT NULL
+        )
+CREATE TABLE orders (
+    id UUID PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    symbol VARCHAR(10) NOT NULL,
+    side VARCHAR(4) NOT NULL,  -- BUY/SELL
+    price DECIMAL(20,8) NOT NULL,
+    remaining_quantity DECIMAL(20,8) NOT NULL,
+    filled_quantity DECIMAL(20,8) DEFAULT 0,
+    created_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE trades (
+    id UUID PRIMARY KEY,
+    maker_order_id UUID REFERENCES orders(id),
+    taker_user_id INTEGER REFERENCES users(id),
+    quantity DECIMAL(20,8) NOT NULL,
+    created_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE balances (
+    user_id INTEGER REFERENCES users(id),
+    asset VARCHAR(10) NOT NULL,
+    amount DECIMAL(20,8) NOT NULL,
+    PRIMARY KEY (user_id, asset)
+);
+''' 
+import psycopg2
 from datetime import datetime
 import bcrypt
-import random
-import string
 
-# Connect to the database
-conn = psycopg2.connect(
-    dbname="docker",
-    user="docker",
-    password="docker",
-    host="localhost"
-)
+def create_tables(cur):
+    # Users table (simplified sendercompid to integer)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(50) UNIQUE NOT NULL,
+            password VARCHAR(100) NOT NULL,
+            sendercompid INTEGER UNIQUE NOT NULL,
+            created_at TIMESTAMP NOT NULL
+        )
+    """)
 
-# Create a cursor
-cur = conn.cursor()
+    # Orders table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS orders (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id),
+            symbol VARCHAR(10) NOT NULL,
+            side VARCHAR(4) NOT NULL,
+            price DECIMAL(20,8) NOT NULL,
+            remaining_quantity DECIMAL(20,8) NOT NULL,
+            filled_quantity DECIMAL(20,8) DEFAULT 0,
+            created_at TIMESTAMP NOT NULL
+        )
+    """)
 
-'''Create the users table
-We dont need a separate column to store the salt since its appended to the hash (bcrypt)
-Added sendercompid field for FIX protocol
-'''
-cur.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        username VARCHAR(50) UNIQUE NOT NULL,
-        password VARCHAR(100) NOT NULL,
-        sendercompid VARCHAR(20) UNIQUE NOT NULL,
-        created_at TIMESTAMP NOT NULL
-    )
-""") 
+    # Trades table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS trades (
+            id SERIAL PRIMARY KEY,
+            maker_order_id INTEGER REFERENCES orders(id),
+            taker_user_id INTEGER REFERENCES users(id),
+            quantity DECIMAL(20,8) NOT NULL,
+            created_at TIMESTAMP NOT NULL
+        )
+    """)
 
-# Generate a salt and hash the password
-salt = bcrypt.gensalt()
-hashed_password = bcrypt.hashpw('password'.encode('utf-8'), salt)
+    # Balances table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS balances (
+            user_id INTEGER REFERENCES users(id),
+            asset VARCHAR(10) NOT NULL,
+            amount DECIMAL(20,8) NOT NULL,
+            PRIMARY KEY (user_id, asset)
+        )
+    """)
 
-# Generate a unique sendercompid
-def generate_sendercompid(username):
-    prefix = 'CEX'
-    random_suffix = ''.join(random.choices(string.digits, k=5))
-    return f"{prefix}_{username.upper()}_{random_suffix}"
+def create_admin_user(cur):
+    # Generate admin password
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw('password'.encode('utf-8'), salt)
+    
+    # Insert admin user with sendercompid as integer
+    cur.execute("""
+        INSERT INTO users (username, password, sendercompid, created_at)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (username) DO NOTHING
+    """, ('admin', hashed_password.decode('utf-8'), 1, datetime.now()))
 
-# Insert mock admin user
-admin_sendercompid = generate_sendercompid('admin')
-admin_user = ('admin', hashed_password.decode('utf-8'), admin_sendercompid, datetime.now())
+def main():
+    try:
+        # Connect to database
+        conn = psycopg2.connect(
+            dbname="docker",
+            user="docker",
+            password="docker",
+            host="localhost"
+        )
+        
+        cur = conn.cursor()
+        create_tables(cur)
+        create_admin_user(cur)
+        conn.commit()
+        print("Database setup completed successfully.")
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
-cur.execute("""
-    INSERT INTO users (username, password, sendercompid, created_at)
-    VALUES (%s, %s, %s, %s)
-    ON CONFLICT (username) DO NOTHING
-""", admin_user)
-
-# Commit the changes
-conn.commit()
-
-# Close the cursor and connection
-cur.close()
-conn.close()
-
-print("Database setup completed successfully.")
+if __name__ == "__main__":
+    main()
