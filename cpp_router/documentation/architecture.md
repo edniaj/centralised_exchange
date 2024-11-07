@@ -16,12 +16,19 @@ DNS LOADBALANCER -- REDIRECTS --> [FIX_GATEWAY_1, FIX_GATEWAY_2 ... FIX_GATEWAY_
 Secondary server might not have exact same state. Race condition between different gateways - solve this
 
 ### MATCHING ENGINE
+--> PRODUCER WRITE BINARY ENCODED MESSAGE INTO RING BUFFER
+RINGBUFFER {seq_1: journal binary_encoded message
+seq_2: match order and execute db pipe command if needed 
+seq_3: maybe stream new change to orderbook or something ? unsure - resolve this tmr 
+}
 Receives binary encoded message --> MATCHES ORDERS -> ADD TO DATABSE OPERATION - UPDATE DB BY BATCHES
 -- MARKET DATA RING BUFFER --> RINGBUFFER{  
+  
                               seq1: write to publishing_data_array, 
                               seq2: write data to market data buffer for streaming (figure out how to implement later)
                               }                  
 
+we need to journal the binary encoded messages so that it can be replayed in SEQUENCE to reconstruct database !!
 1. FIX Gateway RingBuffer:
 [Receive FIX] -> RingBuffer {
     |-> Journal Handler (FIX audit)
