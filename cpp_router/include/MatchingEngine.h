@@ -10,6 +10,8 @@
 #include "RedisManager.h"
 #include "DatabaseManager.h"
 #include "SocketManager.h"
+#include "BinaryProtocolHandler"
+#include "AsyncDatabaseHandler"
 
 class MatchingEngine {
 private:
@@ -17,9 +19,12 @@ private:
     std::string engine_id;
     std::set<std::string> assigned_symbols;
     RedisManager& redisManager;
-    DatabaseManager& dbManager;
+    AsyncDatabaseHandler asyncDatabaseHandler;
     SocketManager& socketManager;
+    BinaryProtocolHandler protocolHandler;
     
+    
+
     struct Order {
         std::string orderId;
         std::string symbol;
@@ -49,11 +54,6 @@ public:
     bool cancelOrder(const FIXMessage& fixMsg);
     bool modifyOrder(const FIXMessage& fixMsg);
     bool processMarketOrder(const FIXMessage& fixMsg);
-
-    // Symbol management
-    void addSymbol(const std::string& symbol);
-    void removeSymbol(const std::string& symbol);
-    bool hasSymbol(const std::string& symbol) const;
 
     // State management
     void loadState();  // Load state from Redis on startup

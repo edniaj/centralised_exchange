@@ -1,4 +1,58 @@
 # Architecture
+## LATEST ARCHITECTURE 8 NOV 2024
+
+DNS LOADBALANCER -- REDIRECTS --> [FIX_GATEWAY_1, FIX_GATEWAY_2 ... FIX_GATEWAY_N]
+
+### FIX GATEWAY  
+--> PRODUCER WRITES ORIGINAL FIX MESSAGE INTO RING BUFFER  
+--> RING_BUFFER { 
+    seq_1 :JOURNAL ORIGINAL FIX MESSAGE,
+    seq_2: BINARY ENCODE FIX_MESSAGE, 
+    seq_3: FORWARD ENCODED MESSAGE TO 2 routes - 
+        first_route = matching engine, 
+        second_route= secdonary_server(replication)}
+          explaination: secondary_server will be ready to take over if original ME or all FIX gateway are dead (e.g.DDOS, bla bla)
+
+Secondary server might not have exact same state. Race condition between different gateways - solve this
+
+### MATCHING ENGINE
+Receives binary encoded message --> MATCHES ORDERS -> ADD TO DATABSE OPERATION - UPDATE DB BY BATCHES
+-- MARKET DATA RING BUFFER --> RINGBUFFER{  
+                              seq1: write to publishing_data_array, 
+                              seq2: write data to market data buffer for streaming (figure out how to implement later)
+                              }                  
+
+1. FIX Gateway RingBuffer:
+[Receive FIX] -> RingBuffer {
+    |-> Journal Handler (FIX audit)
+    |-> Encode Handler (binary)
+    |-> Replicate Handler (secondary)
+    |-> Forward Handler (to ME)
+}
+
+2. Matching Engine:
+[Receive Binary] {
+    - Match orders (single thread)
+    - Update local state
+    - Pipe DB operations (batch processing)
+    - Push to Market Data Buffer
+}
+
+3. Market Data RingBuffer:
+[Market Updates] -> RingBuffer {
+    |-> Publisher Handler
+    |-> Feed Handler
+}
+
+FIX: 
+AVOID USING QUEUES - LARGE OVERHEAD DUE TO CONTENTION AND BLA BLA
+IMPLEMENT DISRUPTOR PATTERN CIRCULAR BUFFER
+
+CENTRALISED MATCHING ENGINE - RESOLVES PROBLEM ABOUT SYNCING BALANCE
+LOWER UPDATING DATABASE OVERHEAD COST SINCE WE INTRODUCED FAULT TOLERANCE METHOD (JOURNALLING)
+
+Problem: Secondary server might not have exact same state. Race condition between different gateways
+
 I will describe the architecture of the system in a way that is easy to understand.
 ## CORRECT:
 
@@ -6,8 +60,11 @@ I will describe the architecture of the system in a way that is easy to understa
 [FIX Clients] → [DNS/Load Balancer] → [Multiple FIX Gateways]
                                       (Each gateway handles max N connections)
 #### Explaination
+
 DNS Load Balancer will issue Fix Gateway IP address to the FIX Clients.
 FIX Clients will send trade orders to Fix Gateway which will redirect the orders to the correct Symbol Router.
+Fix gateway (brokers) will also check balance before sending trade orders, if balance low then dont send to matching engine
+
 
 This architecture will allow us to horizontally scale the FIX Gateways so that MORE USERS can trade. 
 
