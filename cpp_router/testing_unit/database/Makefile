@@ -2,8 +2,8 @@
 CC=g++ -std=c++17
 
 # Directories
-INCLUDE_DIR=../include
-SOURCE_DIR=../source
+INCLUDE_DIR=../../include/database
+SOURCE_DIR=../../source/database
 TEST_DIR=.
 
 # Output executable

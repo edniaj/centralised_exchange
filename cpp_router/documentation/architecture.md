@@ -8,48 +8,24 @@ DNS LOADBALANCER -- REDIRECTS --> [FIX_GATEWAY_1, FIX_GATEWAY_2 ... FIX_GATEWAY_
 --> RING_BUFFER { 
     seq_1 :JOURNAL ORIGINAL FIX MESSAGE,
     seq_2: BINARY ENCODE FIX_MESSAGE, 
-    seq_3: FORWARD ENCODED MESSAGE TO 2 routes - 
-        first_route = matching engine, 
-        second_route= secdonary_server(replication)}
-          explaination: secondary_server will be ready to take over if original ME or all FIX gateway are dead (e.g.DDOS, bla bla)
-
-Secondary server might not have exact same state. Race condition between different gateways - solve this
+    seq_3: FORWARD ENCODED MESSAGE TO matching engine, 
+}
+... Forwards to matching engine ...
 
 ### MATCHING ENGINE
+
 --> PRODUCER WRITE BINARY ENCODED MESSAGE INTO RING BUFFER
-RINGBUFFER {seq_1: journal binary_encoded message
-seq_2: match order and execute db pipe command if needed 
-seq_3: maybe stream new change to orderbook or something ? unsure - resolve this tmr 
-}
-Receives binary encoded message --> MATCHES ORDERS -> ADD TO DATABSE OPERATION - UPDATE DB BY BATCHES
--- MARKET DATA RING BUFFER --> RINGBUFFER{  
-  
-                              seq1: write to publishing_data_array, 
-                              seq2: write data to market data buffer for streaming (figure out how to implement later)
-                              }                  
+  RINGBUFFER {
+    seq_1: Add sequence + journal
+    seq_2: Match order (don't wait)
+    seq_3: |-> AsyncDatabaseHandler that will update Trades in batches of 100
+    seq_4: Stream Market data async.
+    seq_5: |-> Foward to secondary server in batches of 100 orders
+  }
 
-we need to journal the binary encoded messages so that it can be replayed in SEQUENCE to reconstruct database !!
-1. FIX Gateway RingBuffer:
-[Receive FIX] -> RingBuffer {
-    |-> Journal Handler (FIX audit)
-    |-> Encode Handler (binary)
-    |-> Replicate Handler (secondary)
-    |-> Forward Handler (to ME)
-}
+P.S. We are able to updates database in batches of 100 because we have journalled and fault tolerant.
+Journalling means we write on a memory mapped file locally and not on database. its faster this way.
 
-2. Matching Engine:
-[Receive Binary] {
-    - Match orders (single thread)
-    - Update local state
-    - Pipe DB operations (batch processing)
-    - Push to Market Data Buffer
-}
-
-3. Market Data RingBuffer:
-[Market Updates] -> RingBuffer {
-    |-> Publisher Handler
-    |-> Feed Handler
-}
 
 FIX: 
 AVOID USING QUEUES - LARGE OVERHEAD DUE TO CONTENTION AND BLA BLA
@@ -60,6 +36,15 @@ LOWER UPDATING DATABASE OVERHEAD COST SINCE WE INTRODUCED FAULT TOLERANCE METHOD
 
 Problem: Secondary server might not have exact same state. Race condition between different gateways
 
+-------- What we need to implement later. ---------
+
+## Secondary server needed features
+1. Heartbeat system for secondary server to take over and sync
+2. Gap recovery process 
+3. Checksum verfication
+
+
+---- old, will use it for blog later.  -------
 I will describe the architecture of the system in a way that is easy to understand.
 ## CORRECT:
 
