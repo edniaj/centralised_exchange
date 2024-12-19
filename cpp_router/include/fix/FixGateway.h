@@ -5,20 +5,20 @@
 #include <string>
 #include <memory>
 #include "SessionManager.h"  // You'll create this later
-#include "SymbolRouter.h"    // You'll create this later
+#include "MatchingEngine.h"    // You'll create this later
 #include "FixMessage.h"
 #include "DatabaseManager.h"
 #include "MatchingEngine.h"
 #include "SocketManager.h"
-
+#include "BinaryEncoder.h"
 class FIXGateway {
 private:
     std::string gateway_id; // This is the ID of the FIX Gateway
     
     SessionManager sessionManager; // We will use this to manage the sessions and make sure the client is authenticated
     DatabaseManager databaseManager; // We will use this to manage the database
-    SymbolRouter router; // We will use this to route the orders to the correct Matching Engine Instance
-
+    MatchingEngine matchingEngine; // We will use this to route the orders to the correct Matching Engine Instance
+    BinaryEncoder binaryEncoder;
     
     // Private methods
     bool validateMessage(const FIXMessage& msg); // Checksum of FixMessage and TargetCompID must match

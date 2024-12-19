@@ -3,7 +3,7 @@
 
 DNS LOADBALANCER -- REDIRECTS --> [FIX_GATEWAY_1, FIX_GATEWAY_2 ... FIX_GATEWAY_N]
 
-### FIX GATEWAY  
+### FIX GATEWAY  <NO KERNEL BYPASS SINCE WE WANT TO USE KUBERNETES SERVICES AUTO-SCALING FEATURE>
 --> PRODUCER WRITES ORIGINAL FIX MESSAGE INTO RING BUFFER  
 --> RING_BUFFER { 
     seq_1 :JOURNAL ORIGINAL FIX MESSAGE,
@@ -12,11 +12,12 @@ DNS LOADBALANCER -- REDIRECTS --> [FIX_GATEWAY_1, FIX_GATEWAY_2 ... FIX_GATEWAY_
 }
 ... Forwards to matching engine ...
 
-### MATCHING ENGINE
+### MATCHING ENGINE <BARE METAL LINUX SERVER WITH KERNEL BYPASS>
 
---> PRODUCER WRITE BINARY ENCODED MESSAGE INTO RING BUFFER
+Recieve binary encoded message frm fix gatewa
+
   RINGBUFFER {
-    seq_1: Add sequence + journal
+    seq_1: Attach a sequence number (extend fix message) and then journal it down
     seq_2: Match order (don't wait)
     seq_3: |-> AsyncDatabaseHandler that will update Trades in batches of 100
     seq_4: Stream Market data async.
@@ -142,3 +143,8 @@ AS LONG AS WE CAN FINISH WRITING AND EXECUTE THE PIPELINE IN A REASONABLE TIME.
 Redis by default have 16 databases that can be edited in the edis.conf:
 
 
+
+BEST PRACTISES
+1. AVOID USING ATOMIC OR ANY DATASTRUCTURE WITH LOCKS 
+  reason : Contention results in high overhead and slow down in latency.
+2. ALWAYS PREVENT CONTEXT SWITCHING

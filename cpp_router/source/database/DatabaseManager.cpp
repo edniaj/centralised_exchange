@@ -458,3 +458,15 @@ void DatabaseManager::pipeUpdateBalance(int userId, const std::string &asset, do
         newAmount, userId, asset);
 }
 ////////////////////  END OF BALANCES TABLE METHODS ////////////////////
+void DatabaseManager::abortPipe()
+{
+    if (txn)
+    {
+        try {
+            txn->abort();  // Rollback the transaction
+        } catch (...) {
+            // Silently handle any errors during abort
+        }
+        txn.reset();  // Clear the transaction pointer
+    }
+}

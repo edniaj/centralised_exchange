@@ -1,6 +1,7 @@
 FINANCIAL EXCHANGE SYSTEM - PROJECT PLAN
 1. SYSTEM ARCHITECTURE RECAP
-Copy[Client] → DNS LOADBALANCER → [FIX_GATEWAYS] → [MATCHING_ENGINE] → [Secondary Server]
+[Client] → DNS LOADBALANCER → [FIX_GATEWAYS] → [MATCHING_ENGINE] → [Secondary Server]
+
 Key Components:
 
 FIX Gateway
@@ -25,7 +26,8 @@ Database Layer
 Already implemented (DatabaseManager)
 Handles users, orders, trades, balances
 
-
+Networking layer
+DPDK later. We are only working with a macbook 
 
 2. REQUIRED FILES STRUCTURE
 src/
@@ -48,9 +50,9 @@ src/
 ├── matching/
 │   ├── MatchingEngine.h/.cpp     # Main engine
 │   ├── OrderBook.h/.cpp          # Order book
-│   ├── Order.h/.cpp              # Order structure
-│   └── Trade.h/.cpp              # Trade structure
 │
 └── database/                     # Already implemented
     ├── DatabaseManager.h/.cpp
     └── DatabaseTypes.h
+
+    
